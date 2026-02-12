@@ -7,7 +7,7 @@ set -euo pipefail
 # Configuration
 REPO_DIR="/home/ubuntu/homelab"
 COMMIT_MSG_PREFIX="[AUTO]"
-LOG_FILE="/var/log/git-backup.log"
+LOG_FILE="/home/ubuntu/homelab/git-backup.log"
 
 # Logging function
 log() {
