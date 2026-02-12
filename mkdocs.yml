@@ -84,3 +84,7 @@ nav:
   - Version Control:
       - Implementation: plan/GIT-IMPLEMENTATION-GUIDE.md
       - Quick Reference: plan/GIT-QUICK-REFERENCE.md
+  
+  - Documentation Site:
+      - Implementation: plan/DOCS-SITE-IMPLEMENTATION-GUIDE.md
+      - Quick Reference: plan/DOCS-SITE-QUICK-REFERENCE.md

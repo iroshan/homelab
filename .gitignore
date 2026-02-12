@@ -77,6 +77,9 @@ Thumbs.db
 music/
 Music/
 
+# Documentation site (symlinks to actual files)
+docs/
+
 # AdGuard configuration (generated, contains runtime data)
 **/adguard_config/
 

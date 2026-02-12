@@ -1,0 +1,78 @@
+# Stack 06: Documentation
+
+**Status:** ✅ Deployed  
+**Service:** MkDocs Material  
+**Access:** http://localhost:8010
+
+## Overview
+
+Web-based documentation viewer with search, beautiful UI, and live reload.
+
+## Service
+
+```yaml
+services:
+  docs:
+    image: squidfunk/mkdocs-material:latest
+    container_name: homelab-docs
+    ports:
+      - "8010:8000"
+    volumes:
+      - /home/ubuntu/homelab:/docs
+    networks:
+      - docs_net
+      - proxy_net
+```
+
+## Features
+
+- Material Design UI
+- Full-text search
+- Dark/light mode
+- Mobile responsive
+- Live reload
+- Syntax highlighting
+
+## Configuration
+
+**File:** `mkdocs.yml` (homelab root)
+
+**Key settings:**
+- `site_name` - Site title
+- `theme` - Material theme config
+- `nav` - Navigation structure
+- `docs_dir` - Source directory (docs/)
+
+## Management
+
+```bash
+# Start
+docker compose up -d
+
+# Logs
+docker logs homelab-docs -f
+
+# Restart
+docker compose restart
+
+# Update
+docker compose pull && docker compose up -d
+```
+
+## Adding Documentation
+
+1. Create markdown file in plan/
+2. Add to mkdocs.yml nav
+3. Auto-appears in browser
+
+## Resources
+
+- **Access:** http://localhost:8010
+- **Config:** mkdocs.yml
+- **Container:** homelab-docs
+- **Network:** docs_net, proxy_net
+
+---
+
+**Deployed:** 2026-02-12  
+**Guides:** See DOCS-SITE-IMPLEMENTATION-GUIDE.md
