@@ -1,0 +1,76 @@
+# Sensitive Configuration
+**/.env
+**/*.env
+**/secrets/
+**/credentials/
+**/.credentials/
+
+# Data Directories (too large, handled by Kopia backups)
+**/data/
+**/memos_data/
+**/postgres_data/
+**/mysql_data/
+**/mongodb_data/
+**/mariadb_data/
+**/redis_data/
+**/uploads/
+**/storage/
+**/media/
+**/attachments/
+
+# Backup & Cache
+**/kopia-cache/
+**/kopia-logs/
+**/kopia-repository/
+**/cache/
+**/.cache/
+**/logs/
+**/*.log
+**/backup/
+**/backups/
+
+# Build Artifacts & Dependencies
+**/node_modules/
+**/dist/
+**/build/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/.venv/
+**/venv/
+
+# rclone Configuration (contains OAuth tokens)
+**/rclone-config/
+**/.config/rclone/
+
+# Kopia Configuration (contains repository passwords)
+**/kopia-config/
+
+# Docker
+**/.docker/
+**/docker-compose.override.yml
+
+# Temporary Files
+**/tmp/
+**/temp/
+**/*.tmp
+**/*.swp
+**/*.bak
+**/*~
+
+# OS Specific
+.DS_Store
+Thumbs.db
+*.lnk
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Git
+.git/
+
+# Music and large media (if using rclone mount)
+music/
+Music/
