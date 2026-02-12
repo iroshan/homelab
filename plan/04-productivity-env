@@ -1,0 +1,10 @@
+# Productivity Stack Environment Variables
+# Place in: ~/homelab/04-productivity/.env
+
+# Telegram Bot for Memos
+# Get from: https://t.me/BotFather
+# 1. Start chat with @BotFather
+# 2. Send: /newbot
+# 3. Follow instructions
+# 4. Copy the token here
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here

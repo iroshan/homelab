@@ -1,0 +1,86 @@
+services:
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:v0.9.10
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./homepage_config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "3005:3000"
+    networks:
+      - monitoring_net
+      - proxy_net
+      - infrastructure_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.17
+    container_name: uptime_kuma
+    restart: unless-stopped
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./uptime_kuma_data:/app/data
+    ports:
+      - '3001:3001'
+    networks:
+      - monitoring_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  dozzle:
+    image: amir20/dozzle:v8.7.1
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOZZLE_LEVEL=info
+      - DOZZLE_TAILSIZE=300
+      - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_BASE=/
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    networks:
+      - monitoring_net
+      - proxy_net
+      - infrastructure_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  monitoring_net:
+    name: monitoring_net
+    external: true
+  
+  proxy_net:
+    name: proxy_net
+    external: true
+  
+  infrastructure_net:
+    name: infrastructure_net
+    external: true

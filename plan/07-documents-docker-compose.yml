@@ -1,0 +1,49 @@
+# =============================================================================
+# STACK 7: DOCUMENTS
+# =============================================================================
+# Purpose: Document processing and PDF tools
+# Services: Stirling-PDF (comprehensive PDF toolkit)
+# Deploy: Anytime (independent)
+# =============================================================================
+
+services:
+
+  # --- PDF TOOLS ---
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:0.34.0
+    container_name: stirling_pdf
+    restart: unless-stopped
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - SYSTEM_DEFAULTLOCALE=en-GB
+      - UI_APPNAME=Stirling-PDF
+      - LANGS=en_GB
+      - INSTALL_BOOK_AND_ADVANCED_HTML_OPS=true
+      - SECURITY_ENABLELOGIN=false
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./stirling_config:/configs
+      - ./stirling_logs:/logs
+      - ./stirling_customFiles:/customFiles
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - documents_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  documents_net:
+    name: documents_net
+    driver: bridge
+  
+  proxy_net:
+    name: proxy_net
+    external: true

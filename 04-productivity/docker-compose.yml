@@ -1,0 +1,68 @@
+# =============================================================================
+# STACK 4: PRODUCTIVITY
+# =============================================================================
+# Purpose: Notes and quick captures
+# Services: Memos (note-taking), Telegram Bot (integration)
+# Deploy: After core infrastructure
+# =============================================================================
+
+services:
+
+  # --- MEMOS (NOTE TAKING) ---
+  memos:
+    image: neosmemo/memos:0.22.5
+    container_name: memos
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./memos_data:/var/opt/memos
+    ports:
+      - "5230:5230"
+    networks:
+      - productivity_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- TELEGRAM BOT FOR MEMOS ---
+  telegram-memos-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: telegram_memos_bot
+    restart: unless-stopped
+    depends_on:
+      - memos
+    environment:
+      - BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - MEMOS_URL=http://memos:5230
+      - BOT_ADMIN_USER_ID=${BOT_ADMIN_USER_ID:-}
+      - DAILY_SUMMARY_TIME=${DAILY_SUMMARY_TIME:-20:00}
+      - WEEKLY_SUMMARY_DAY=${WEEKLY_SUMMARY_DAY:-0}
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    networks:
+      - productivity_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  productivity_net:
+    name: productivity_net
+    external: true
+  
+  proxy_net:
+    name: proxy_net
+    external: true

@@ -1,0 +1,123 @@
+# =============================================================================
+# STACK 3: MONITORING & DASHBOARD
+# =============================================================================
+# Purpose: System monitoring, logs, and HOMEPAGE as entrance point
+# Services: Homepage (dashboard), Uptime Kuma, Dozzle
+# Deploy: After core infrastructure and network access
+# =============================================================================
+
+services:
+
+  # --- HOMEPAGE DASHBOARD (ENTRANCE POINT) ---
+  homepage:
+    image: ghcr.io/gethomepage/homepage:v0.9.10
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - ./homepage_config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    ports:
+      - "3005:3000"
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+      - infrastructure_net
+      - productivity_net
+      - documents_net
+      - utilities_net
+      - communication_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- UPTIME MONITORING ---
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.17
+    container_name: uptime_kuma
+    restart: unless-stopped
+    volumes:
+      - ./uptime_kuma_data:/app/data
+    ports:
+      - '3001:3001'
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- LOGS VIEWER ---
+  dozzle:
+    image: amir20/dozzle:v8.7.1
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOZZLE_LEVEL=info
+      - DOZZLE_TAILSIZE=300
+      - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_BASE=/
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+      - infrastructure_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  monitoring_net:
+    name: monitoring_net
+    driver: bridge
+  
+  proxy_net:
+    name: proxy_net
+    external: true
+  
+  infrastructure_net:
+    name: infrastructure_net
+    external: true
+  
+  productivity_net:
+    name: productivity_net
+    external: true
+  
+  documents_net:
+    name: documents_net
+    external: true
+  
+  utilities_net:
+    name: utilities_net
+    external: true
+  
+  communication_net:
+    name: communication_net
+    external: true

@@ -1,0 +1,199 @@
+# =============================================================================
+# STACK 3: MONITORING & OBSERVABILITY
+# =============================================================================
+# Purpose: System monitoring, health checks, logs, dashboard
+# Deploy: THIRD (after network access)
+# =============================================================================
+
+services:
+
+  # --- UPTIME MONITORING ---
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.17
+    container_name: uptime_kuma
+    restart: unless-stopped
+    volumes:
+      - ./uptime_kuma_data:/app/data
+    ports:
+      - '3001:3001'
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net  # For accessing other services
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- VITALS MONITOR ---
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    restart: unless-stopped
+    ports:
+      - "8091:8090"
+    volumes:
+      - ./beszel_data:/beszel_data
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ⚠️ CRITICAL FIX: Changed from network_mode: host
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    # REMOVED: network_mode: host  ❌ This broke DNS!
+    # ADDED: proper network + host access
+    networks:
+      - monitoring_net
+    # This gives access to host metrics without breaking DNS
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Allow access to host network namespace for metrics
+    pid: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./beszel_agent_data:/var/lib/beszel-agent
+      - /:/host:ro  # Read-only host filesystem access for metrics
+    environment:
+      - LISTEN=45876
+      - KEY=${BESZEL_SSH_KEY}
+      - TOKEN=${BESZEL_TOKEN}
+      - HUB_URL=${BESZEL_HUB_URL}
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- LOGS ---
+  dozzle:
+    image: amir20/dozzle:v8.7.1
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOZZLE_LEVEL=info
+      - DOZZLE_TAILSIZE=300
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- MONITORING BACKUP ---
+  glances:
+    image: nicolargo/glances:4.2.0
+    container_name: glances
+    restart: unless-stopped
+    pid: host
+    ports:
+      - "61208:61208"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - GLANCES_OPT=-w
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- DASHBOARD ---
+  homepage:
+    image: ghcr.io/gethomepage/homepage:v0.9.10
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - HOMEPAGE_ALLOWED_HOSTS=home.iroshan.uk,localhost,homepage
+    volumes:
+      - ./homepage_config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "3005:3000"
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - monitoring_net
+      - proxy_net
+      # Homepage needs to access all stacks to monitor them
+      - productivity_net
+      - knowledge_net
+      - media_net
+      - documents_net
+      - utilities_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  monitoring_net:
+    name: monitoring_net
+    driver: bridge
+    
+  proxy_net:
+    name: proxy_net
+    external: true
+    
+  # These are accessed by homepage for monitoring
+  productivity_net:
+    name: productivity_net
+    external: true
+    
+  knowledge_net:
+    name: knowledge_net
+    external: true
+    
+  media_net:
+    name: media_net
+    external: true
+    
+  documents_net:
+    name: documents_net
+    external: true
+    
+  utilities_net:
+    name: utilities_net
+    external: true

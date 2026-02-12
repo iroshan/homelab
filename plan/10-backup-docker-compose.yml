@@ -1,0 +1,118 @@
+# =============================================================================
+# STACK 10: BACKUP - IMPLEMENTED
+# =============================================================================
+# Status: ✅ DEPLOYED & OPERATIONAL
+# Date Implemented: 2026-02-12
+# Services: Kopia (backup), rclone (music), ofelia (scheduler)
+# =============================================================================
+
+services:
+
+  # --- KOPIA BACKUP SERVER ---
+  kopia:
+    image: kopia/kopia:latest
+    container_name: kopia
+    restart: unless-stopped
+    hostname: homelab-backup
+    environment:
+      - KOPIA_PASSWORD=${KOPIA_PASSWORD}
+      - TZ=Europe/London
+      - USER=kopia
+      - KOPIA_PERSIST_CREDENTIALS_ON_CONNECT=true
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    ports:
+      - "51515:51515"  # Web UI
+    volumes:
+      # Kopia configuration and cache (PERSISTED)
+      - ./kopia-config:/app/config
+      - ./kopia-cache:/app/cache
+      - ./kopia-logs:/app/logs
+      
+      # rclone configuration (PERSISTED - CRITICAL!)
+      - ./rclone-config:/root/.config/rclone
+      
+      # Backup scripts
+      - ./scripts:/app/scripts:ro
+      
+      # Source data to backup (read-only)
+      - /home/ubuntu/homelab:/backup-source:ro
+      
+      # Repository storage (for local testing)
+      - ./kopia-repository:/repository
+    networks:
+      - backup_net
+      - proxy_net
+    command: server start --insecure --address=0.0.0.0:51515 --server-username=${KOPIA_SERVER_USERNAME} --server-password=${KOPIA_SERVER_PASSWORD}
+    labels:
+      # Ofelia scheduler labels for automated backups
+      ofelia.enabled: "true"
+      ofelia.job-exec.backup-daily.schedule: "0 0 2 * * *"  # Daily at 2:00 AM
+      ofelia.job-exec.backup-daily.command: "kopia snapshot create /backup-source --description 'Automated daily backup'"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- OFELIA SCHEDULER ---
+  # Docker-based cron for automated backups
+  ofelia:
+    image: mcuadros/ofelia:latest
+    container_name: backup-scheduler
+    restart: unless-stopped
+    depends_on:
+      - kopia
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - backup_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+
+  # --- RCLONE (MUSIC MOUNTING) ---
+  rclone:
+    image: rclone/rclone:latest
+    container_name: rclone-music
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./rclone-config:/config/rclone
+      - /home/ubuntu/homelab/music:/mnt/music:shared
+    devices:
+      - /dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    networks:
+      - media_net
+    command: "mount gdrive-music: /mnt/music --allow-other --vfs-cache-mode writes --log-level INFO"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backup_net:
+    name: backup_net
+    external: true
+  
+  proxy_net:
+    name: proxy_net
+    external: true
+  
+  media_net:
+    name: media_net
+    external: true

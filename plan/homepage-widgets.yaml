@@ -1,0 +1,33 @@
+# Homepage Widgets Configuration
+# Place in: ~/homelab/03-monitoring/homepage_config/widgets.yaml
+
+---
+# System Resources
+- resources:
+    backend: resources
+    expanded: true
+    cpu: true
+    memory: true
+    disk: /
+
+# Docker Stats
+- search:
+    provider: google
+    target: _blank
+
+# Weather (optional - add your location)
+# - openweathermap:
+#     label: London
+#     latitude: 51.5074
+#     longitude: -0.1278
+#     units: metric
+#     provider: openweathermap
+#     apiKey: yourapikeyhere
+
+# Date & Time
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: long
+      timeStyle: short
+      hour12: false

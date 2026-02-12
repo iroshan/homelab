@@ -1,0 +1,51 @@
+# =============================================================================
+# STACK 9: COMMUNICATION
+# =============================================================================
+# Purpose: Notifications and messaging
+# Services: Ntfy (push notifications)
+# Deploy: After monitoring stack
+# =============================================================================
+
+services:
+
+  # --- PUSH NOTIFICATIONS ---
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    command:
+      - serve
+    ports:
+      - "8092:80"
+    volumes:
+      - ./ntfy_data:/var/cache/ntfy
+      - ./ntfy_config:/etc/ntfy
+    environment:
+      - TZ=Europe/London
+      - NTFY_BASE_URL=https://notify.yourdomain.com
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/cache/ntfy/auth.db
+      - NTFY_ATTACHMENT_CACHE_DIR=/var/cache/ntfy/attachments
+      - NTFY_ENABLE_LOGIN=true
+      - NTFY_BEHIND_PROXY=true
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - communication_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  communication_net:
+    name: communication_net
+    driver: bridge
+  
+  proxy_net:
+    name: proxy_net
+    external: true

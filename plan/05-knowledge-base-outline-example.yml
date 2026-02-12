@@ -1,0 +1,196 @@
+# =============================================================================
+# STACK 5: KNOWLEDGE BASE - OUTLINE EXAMPLE
+# =============================================================================
+# Purpose: Wiki/knowledge base with document collaboration
+# Services: Outline + PostgreSQL + Redis
+# This shows how to properly set up multi-service stacks with databases
+# =============================================================================
+
+services:
+
+  # --- OUTLINE (KNOWLEDGE BASE) ---
+  outline:
+    image: outlinewiki/outline:0.80.2
+    container_name: outline
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    volumes:
+      - ./outline_data:/var/lib/outline/data
+    environment:
+      # Secrets from .env file
+      - SECRET_KEY=${OUTLINE_SECRET_KEY}
+      - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
+      
+      # Database connection (using service name, not localhost!)
+      - PGSSLMODE=disable
+      - DATABASE_URL=postgres://${OUTLINE_DB_USER}:${OUTLINE_DB_PASSWORD}@outline-db:5432/${OUTLINE_DB_NAME}
+      
+      # Redis connection (using service name)
+      - REDIS_URL=redis://outline-redis:6379
+      
+      # Public URLs
+      - URL=https://outline.iroshan.uk
+      - COLLABORATION_URL=wss://outline.iroshan.uk
+      
+      # File storage
+      - FILE_STORAGE=local
+      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      
+      # Security
+      - FORCE_HTTPS=false  # NPM handles SSL
+      - RATE_LIMITER_ENABLED=true
+      - RATE_LIMITER_REQUESTS=1000
+      - RATE_LIMITER_DURATION_WINDOW=60
+    
+    # Use DNS
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    
+    # Wait for dependencies to be healthy
+    depends_on:
+      outline-db:
+        condition: service_healthy
+      outline-redis:
+        condition: service_healthy
+    
+    # Only on knowledge_net (NOT on proxy_net directly)
+    # NPM will proxy from proxy_net to this service
+    networks:
+      - knowledge_net
+    
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Outline needs time to initialize
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- POSTGRESQL DATABASE ---
+  outline-db:
+    image: postgres:15-alpine
+    container_name: outline-db
+    restart: unless-stopped
+    volumes:
+      - ./outline_pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${OUTLINE_DB_USER}
+      - POSTGRES_PASSWORD=${OUTLINE_DB_PASSWORD}
+      - POSTGRES_DB=${OUTLINE_DB_NAME}
+      # Performance tuning
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    
+    # Database should NEVER be on proxy_net - internal only!
+    networks:
+      - knowledge_net
+    
+    # Critical: health check that actually works
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OUTLINE_DB_USER} -d ${OUTLINE_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits (PostgreSQL can be memory-hungry)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- REDIS CACHE ---
+  outline-redis:
+    image: redis:7-alpine
+    container_name: outline-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+    
+    volumes:
+      - ./outline_redis_data:/data
+    
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    
+    # Redis should NEVER be on proxy_net - internal only!
+    networks:
+      - knowledge_net
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  knowledge_net:
+    name: knowledge_net
+    driver: bridge
+    # Database network should be internal only
+    # (unless you need external access for debugging)
+    # internal: true
+
+# =============================================================================
+# BEST PRACTICES DEMONSTRATED HERE:
+# =============================================================================
+# 1. ✅ Application and databases in same stack
+# 2. ✅ Application uses service names for connection (not localhost)
+# 3. ✅ Health checks on dependencies with proper conditions
+# 4. ✅ Databases NOT on proxy_net (security)
+# 5. ✅ Resource limits on memory-hungry services
+# 6. ✅ Persistent volumes for data
+# 7. ✅ All containers have DNS configured
+# 8. ✅ Security hardening (no-new-privileges)
+# 9. ✅ Proper startup ordering (depends_on with conditions)
+# 10. ✅ Logging configured consistently
+# =============================================================================

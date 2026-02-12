@@ -1,0 +1,63 @@
+# Homepage Services Configuration
+# Place in: ~/homelab/03-monitoring/homepage_config/services.yaml
+
+---
+# ADMIN PANEL
+- Admin Panel:
+    - Portainer:
+        icon: portainer.png
+        href: https://portainer.yourdomain.com
+        description: Container Management
+        widget:
+          type: portainer
+          url: http://portainer:9000
+          env: 1
+          key: ptr_yourapikeyhere
+        
+    - Nginx Proxy Manager:
+        icon: nginx-proxy-manager.png
+        href: https://npm.yourdomain.com
+        description: Reverse Proxy
+        
+    - AdGuard Home:
+        icon: adguard-home.png
+        href: https://adguard.yourdomain.com
+        description: DNS & Ad Blocking
+        widget:
+          type: adguard
+          url: http://adguard:3000
+          username: admin
+          password: yourpasswordhere
+
+# SERVICES
+- Services:
+    - Memos:
+        icon: memos.png
+        href: https://memos.yourdomain.com
+        description: Quick Notes
+        
+    - Stirling PDF:
+        icon: stirling-pdf.png
+        href: https://pdf.yourdomain.com
+        description: PDF Tools
+        
+    - Ntfy:
+        icon: ntfy.png
+        href: https://notify.yourdomain.com
+        description: Push Notifications
+
+# MONITORING
+- Monitoring:
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: https://uptime.yourdomain.com
+        description: Service Monitoring
+        widget:
+          type: uptimekuma
+          url: http://uptime_kuma:3001
+          slug: status
+        
+    - Dozzle:
+        icon: dozzle.png
+        href: https://logs.yourdomain.com
+        description: Docker Logs

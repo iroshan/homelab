@@ -1,0 +1,81 @@
+# =============================================================================
+# STACK 1: CORE INFRASTRUCTURE
+# =============================================================================
+# Purpose: DNS & Cloudflare Tunnel
+# Deploy: FIRST (everything depends on this)
+# Network: infrastructure_net (isolated) + proxy_net (for NPM access)
+# =============================================================================
+
+services:
+
+  # --- DNS & AD BLOCKING ---
+  adguard:
+    container_name: adguard
+    image: adguard/adguardhome:v0.107.54
+    restart: unless-stopped
+    ports:
+      # ⚠️ CRITICAL FIX: Changed from port 53 to avoid system DNS conflict
+      - "5353:53/tcp"    # Use 5353 externally, 53 internally
+      - "5353:53/udp"    
+      - "3000:3000/tcp"  # Web UI
+    environment:
+      - TZ=Europe/London
+    volumes:
+      - ./adguard_config/work:/opt/adguardhome/work
+      - ./adguard_config/conf:/opt/adguardhome/conf
+    networks:
+      infrastructure_net:
+        # Static IP so other containers can reliably use it as DNS
+        ipv4_address: 172.18.0.2
+      proxy_net:  # Also on proxy network for NPM access
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- CLOUDFLARE TUNNEL ---
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: cloudflared
+    restart: unless-stopped
+    # Use our AdGuard DNS + fallbacks
+    dns:
+      - 172.18.0.2  # AdGuard
+      - 1.1.1.1     # Cloudflare fallback
+      - 8.8.8.8     # Google fallback
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - infrastructure_net
+      - proxy_net
+    depends_on:
+      adguard:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  infrastructure_net:
+    name: infrastructure_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.18.0.0/24
+          gateway: 172.18.0.1
+  
+  proxy_net:
+    name: proxy_net
+    driver: bridge
+    external: true  # Created by network stack

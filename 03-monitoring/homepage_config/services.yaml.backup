@@ -1,0 +1,27 @@
+---
+- Admin Panel:
+    - Portainer:
+        icon: portainer.png
+        href: https://portainer.yourdomain.com
+        description: Container Management
+        
+    - Nginx Proxy Manager:
+        icon: nginx-proxy-manager.png
+        href: https://npm.yourdomain.com
+        description: Reverse Proxy
+        
+    - AdGuard Home:
+        icon: adguard-home.png
+        href: https://adguard.yourdomain.com
+        description: DNS & Ad Blocking
+
+- Monitoring:
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: https://uptime.yourdomain.com
+        description: Service Monitoring
+        
+    - Dozzle:
+        icon: dozzle.png
+        href: https://logs.yourdomain.com
+        description: Docker Logs

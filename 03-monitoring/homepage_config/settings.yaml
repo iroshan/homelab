@@ -1,0 +1,17 @@
+title: Homelab Dashboard
+favicon: https://gethomepage.dev/img/favicon.ico
+theme: dark
+color: slate
+
+layout:
+  Admin Panel:
+    style: row
+    columns: 3
+  Services:
+    style: row
+    columns: 3
+  Monitoring:
+    style: row
+    columns: 2
+
+showStats: true

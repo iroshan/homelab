@@ -1,0 +1,48 @@
+networks:
+  # Public-facing services
+  proxy_net:
+    name: proxy_net
+    driver: bridge
+    
+  # Core infrastructure (DNS, tunnels)
+  infrastructure_net:
+    name: infrastructure_net
+    driver: bridge
+    internal: true  # No external access
+    ipam:
+      config:
+        - subnet: 172.18.0.0/24
+    
+  # Monitoring systems
+  monitoring_net:
+    name: monitoring_net
+    driver: bridge
+    
+  # Application networks (isolated per stack)
+  productivity_net:
+    name: productivity_net
+    driver: bridge
+    
+  knowledge_net:
+    name: knowledge_net
+    driver: bridge
+    
+  media_net:
+    name: media_net
+    driver: bridge
+    
+  documents_net:
+    name: documents_net
+    driver: bridge
+    
+  utilities_net:
+    name: utilities_net
+    driver: bridge
+    
+  communication_net:
+    name: communication_net
+    driver: bridge
+    
+  backup_net:
+    name: backup_net
+    driver: bridge

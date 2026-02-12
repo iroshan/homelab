@@ -1,0 +1,43 @@
+---
+- Admin Panel:
+    - Portainer:
+        icon: portainer.png
+        href: https://port.iroshan.uk
+        description: Container Management
+        
+    - Nginx Proxy Manager:
+        icon: nginx-proxy-manager.png
+        href: https://npm.iroshan.uk
+        description: Reverse Proxy
+        
+    - AdGuard Home:
+        icon: adguard-home.png
+        href: https://ad.iroshan.uk
+        description: DNS & Ad Blocking
+
+- Services:
+    - Memos:
+        icon: memos.png
+        href: https://memos.iroshan.uk
+        description: Quick Notes
+        
+    - Stirling PDF:
+        icon: stirling-pdf.png
+        href: https://pdf.iroshan.uk
+        description: PDF Tools
+        
+    - Ntfy:
+        icon: ntfy.png
+        href: https://notify.iroshan.uk
+        description: Push Notifications
+
+- Monitoring:
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: https://status.iroshan.uk
+        description: Service Monitoring
+        
+    - Dozzle:
+        icon: dozzle.png
+        href: https://logs.iroshan.uk
+        description: Docker Logs

@@ -1,0 +1,63 @@
+services:
+  
+  # DNS & AD BLOCKING
+  adguard:
+    container_name: adguard
+    image: adguard/adguardhome:v0.107.54
+    restart: unless-stopped
+    ports:
+      - "5353:53/tcp"
+      - "5353:53/udp"
+      - "3000:3000/tcp"
+    environment:
+      - TZ=Europe/London
+    volumes:
+      - ./adguard_config/work:/opt/adguardhome/work
+      - ./adguard_config/conf:/opt/adguardhome/conf
+    networks:
+      infrastructure_net:
+        ipv4_address: 172.18.0.2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # CLOUDFLARE TUNNEL
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: cloudflared
+    restart: unless-stopped
+    dns:
+      - 172.18.0.2
+      - 1.1.1.1
+      - 8.8.8.8
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - infrastructure_net
+      - proxy_net
+    depends_on:
+      adguard:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  infrastructure_net:
+    name: infrastructure_net
+    external: true
+  
+  proxy_net:
+    name: proxy_net
+    external: true

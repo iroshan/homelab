@@ -1,0 +1,26 @@
+# Homepage Settings Configuration
+# Place in: ~/homelab/03-monitoring/homepage_config/settings.yaml
+
+title: Homelab Dashboard
+favicon: https://gethomepage.dev/img/favicon.ico
+
+theme: dark
+color: slate
+
+layout:
+  Admin Panel:
+    style: row
+    columns: 3
+  Services:
+    style: row
+    columns: 3
+  Monitoring:
+    style: row
+    columns: 2
+
+providers:
+  openweathermap: openweathermapapikey
+  weatherapi: weatherapiapikey
+
+# Show Docker stats
+showStats: true

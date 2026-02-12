@@ -22,6 +22,8 @@
 **/kopia-cache/
 **/kopia-logs/
 **/kopia-repository/
+**/kopia-config/
+**/kopia-config.backup*/
 **/cache/
 **/.cache/
 **/logs/
@@ -74,3 +76,14 @@ Thumbs.db
 # Music and large media (if using rclone mount)
 music/
 Music/
+
+# AdGuard configuration (generated, contains runtime data)
+**/adguard_config/
+
+# SSL/TLS Certificates (Let's Encrypt)
+**/letsencrypt/
+**/ssl/
+**/*.pem
+**/*.crt
+**/*.key
+

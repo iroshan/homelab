@@ -1,0 +1,22 @@
+{
+  "name": "telegram-memos-bot",
+  "version": "1.0.0",
+  "description": "Comprehensive Telegram bot for Memos note-taking app",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["telegram", "bot", "memos", "notes", "productivity"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "axios": "^1.6.5",
+    "node-cron": "^3.0.3",
+    "date-fns": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

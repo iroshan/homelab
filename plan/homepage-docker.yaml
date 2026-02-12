@@ -1,0 +1,15 @@
+# Homepage Docker Integration
+# Place in: ~/homelab/03-monitoring/homepage_config/docker.yaml
+
+---
+# This allows Homepage to show Docker container stats
+
+my-docker:
+  host: unix:///var/run/docker.sock
+  
+  # Show these containers on the dashboard
+  widgets:
+    - resources:
+        cpu: true
+        memory: true
+        expanded: true
