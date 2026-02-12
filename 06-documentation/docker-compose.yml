@@ -1,0 +1,44 @@
+# =============================================================================
+# STACK 06: DOCUMENTATION
+# =============================================================================
+# Purpose: Web-based documentation viewer with search
+# Service: MkDocs Material
+# Access: http://localhost:8010
+# =============================================================================
+
+services:
+
+  # --- MKDOCS DOCUMENTATION SITE ---
+  docs:
+    image: squidfunk/mkdocs-material:latest
+    container_name: homelab-docs
+    restart: unless-stopped
+    hostname: homelab-docs
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    ports:
+      - "8010:8000"
+    volumes:
+      # Mount entire homelab directory as docs root
+      - /home/ubuntu/homelab:/docs
+    networks:
+      - docs_net
+      - proxy_net
+    command: serve --dev-addr=0.0.0.0:8000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  docs_net:
+    name: docs_net
+    external: true
+  
+  proxy_net:
+    name: proxy_net
+    external: true

@@ -1,0 +1,86 @@
+site_name: Homelab Documentation
+site_description: Complete homelab infrastructure documentation and guides
+site_author: Homelab Admin
+site_url: http://localhost:8010
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  features:
+    - navigation.instant        # Instant loading
+    - navigation.tracking       # URL updates on scroll
+    - navigation.tabs           # Top-level tabs
+    - navigation.sections       # Collapsible sections
+    - navigation.expand         # Expand all by default
+    - navigation.top            # Back to top button
+    - search.suggest            # Search suggestions
+    - search.highlight          # Highlight search terms
+    - content.code.copy         # Copy code blocks
+    - content.tabs.link         # Link content tabs
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  
+  - Getting Started:
+      - Git Setup: SETUP-GIT.md
+      - Quick Reference: plan/QUICK-REFERENCE.md
+      - Quick Checklist: plan/QUICK-CHECKLIST.md
+  
+  - Infrastructure:
+      - Overview: plan/homelab-restructure-plan.md
+      - Network Architecture: plan/NETWORK-ARCHITECTURE-GUIDE.md
+      - Network Reference: plan/NETWORK-REFERENCE-CARD.md
+      - Multi-Network Deployment: plan/MULTI-NETWORK-DEPLOYMENT.md
+  
+  - Deployment:
+      - Deployment Guide: plan/DEPLOY-4-SERVICES.md
+      - Migration Guide: plan/MIGRATION-GUIDE.md
+  
+  - Cloudflare:
+      - Architecture: plan/CLOUDFLARE-ARCHITECTURE.md
+      - Access Guide: plan/CLOUDFLARE-ACCESS-GUIDE.md
+      - Quick Start: plan/CLOUDFLARE-ACCESS-QUICKSTART.md
+      - Oracle Cloud Setup: plan/ORACLE-CLOUD-SETUP.md
+  
+  - Backup:
+      - Implementation: plan/BACKUP-IMPLEMENTATION-GUIDE.md
+      - Quick Reference: plan/BACKUP-QUICK-REFERENCE.md
+  
+  - Version Control:
+      - Implementation: plan/GIT-IMPLEMENTATION-GUIDE.md
+      - Quick Reference: plan/GIT-QUICK-REFERENCE.md
