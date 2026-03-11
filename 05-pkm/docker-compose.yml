@@ -1,0 +1,126 @@
+# =============================================================================
+# STACK 5: PKM (Personal Knowledge Management)
+# =============================================================================
+# Purpose: Affine knowledge base
+# Services: Affine, PostgreSQL, Redis
+# Deploy: After core infrastructure
+# =============================================================================
+
+services:
+  affine:
+    image: ghcr.io/toeverything/affine:stable
+    container_name: affine
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./affine_data:/root/.affine
+    environment:
+      NODE_ENV: production
+      AFFINE_SERVER_PORT: 3010
+      AFFINE_SERVER_HOST: 0.0.0.0
+      AFFINE_SERVER_BASE_URL: ${AFFINE_URL:-https://pkm.iroshan.uk}
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-affine}:${POSTGRES_PASSWORD:-affine_password}@postgres:5432/${POSTGRES_DB:-affine}
+      # Redis — Affine uses REDIS_SERVER_HOST, not REDIS_URL
+      REDIS_SERVER_HOST: redis
+      REDIS_SERVER_PORT: 6379
+      REDIS_SERVER_DATABASE: 0
+    depends_on:
+      affine_migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pkm_net
+      - proxy_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  affine_migration:
+    image: ghcr.io/toeverything/affine:stable
+    container_name: affine_migration
+    restart: "no"
+    command: ["sh", "-c", "node ./scripts/self-host-predeploy.js"]
+    volumes:
+      - ./affine_data:/root/.affine
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-affine}:${POSTGRES_PASSWORD:-affine_password}@postgres:5432/${POSTGRES_DB:-affine}
+      REDIS_SERVER_HOST: redis
+      REDIS_SERVER_PORT: 6379
+      REDIS_SERVER_DATABASE: 0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pkm_net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: affine_postgres
+    restart: unless-stopped
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-affine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-affine_password}
+      POSTGRES_DB: ${POSTGRES_DB:-affine}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-affine} -d ${POSTGRES_DB:-affine}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pkm_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: affine_redis
+    restart: unless-stopped
+    volumes:
+      - ./redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pkm_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  pkm_net:
+    name: pkm_net
+    driver: bridge
+
+  proxy_net:
+    name: proxy_net
+    external: true
