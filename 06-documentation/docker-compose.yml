@@ -13,6 +13,7 @@ services:
     image: squidfunk/mkdocs-material:latest
     container_name: homelab-docs
     restart: unless-stopped
+    user: "1000:1000"
     hostname: homelab-docs
     environment:
       - TZ=Europe/London
@@ -27,6 +28,11 @@ services:
     networks:
       - docs_net
       - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
     command: serve --dev-addr=0.0.0.0:8000
     logging:
       driver: "json-file"

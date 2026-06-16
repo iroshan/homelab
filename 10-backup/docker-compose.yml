@@ -19,6 +19,10 @@ services:
       - TZ=Europe/London
       - USER=kopia
       - KOPIA_PERSIST_CREDENTIALS_ON_CONNECT=true
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - NTFY_URL=${NTFY_URL:-}
+      - NTFY_TOPIC=${NTFY_TOPIC:-}
     extends:
       file: ../shared/dns-config.yml
       service: dns-base
@@ -31,7 +35,7 @@ services:
       - ./kopia-logs:/app/logs
       
       # rclone configuration (for Google Drive access)
-      - ./rclone-config:/root/.config/rclone
+      - ./rclone-config:/app/rclone
       
       # Backup scripts
       - ./scripts:/app/scripts:ro
@@ -44,11 +48,19 @@ services:
     networks:
       - backup_net
       - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    mem_reservation: 64m
+    cpus: "0.5"
     command: server start --insecure --address=0.0.0.0:51515 --server-username=${KOPIA_SERVER_USERNAME} --server-password=${KOPIA_SERVER_PASSWORD}
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.backup-daily.schedule: "0 0 2 * * *"
       ofelia.job-exec.backup-daily.command: "kopia snapshot create /backup-source --description 'Automated daily backup'"
+      # Vaultwarden → Google Drive backup (runs 1hr before Kopia snapshot)
+      ofelia.job-exec.vw-gdrive-backup.schedule: "0 0 1 * * *"
+      ofelia.job-exec.vw-gdrive-backup.command: "sh /app/scripts/backup-vaultwarden-gdrive.sh"
     logging:
       driver: "json-file"
       options:
@@ -67,6 +79,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - backup_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.2"
     logging:
       driver: "json-file"
       options:
@@ -95,6 +112,9 @@ services:
       - apparmor:unconfined
     networks:
       - media_net
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.2"
     command: "mount gdrive-music: /mnt/music --allow-other --vfs-cache-mode writes --log-level INFO"
     logging:
       driver: "json-file"

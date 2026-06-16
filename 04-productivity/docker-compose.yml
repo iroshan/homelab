@@ -13,6 +13,7 @@ services:
     image: neosmemo/memos:0.22.5
     container_name: memos
     restart: unless-stopped
+    user: "1000:1000"
     environment:
       - TZ=Europe/London
     extends:
@@ -25,6 +26,11 @@ services:
     networks:
       - productivity_net
       - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
     logging:
       driver: "json-file"
       options:
@@ -52,6 +58,11 @@ services:
       service: dns-base
     networks:
       - productivity_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.1"
     logging:
       driver: "json-file"
       options:

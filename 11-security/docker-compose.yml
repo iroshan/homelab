@@ -1,0 +1,120 @@
+# =============================================================================
+# STACK 11: SECURITY
+# =============================================================================
+# Purpose: Password management and secrets
+# Services: Vaultwarden (Bitwarden-compatible password manager)
+# Deploy: After core infrastructure and network access
+# Security audit: 2026-06-16 — hardened
+# =============================================================================
+
+services:
+
+  # --- VAULTWARDEN (PASSWORD MANAGER) ---
+  vaultwarden:
+    image: vaultwarden/server:1.33.2
+    container_name: vaultwarden
+    restart: unless-stopped
+    user: "1000:1000"                   # Run as non-root user
+    environment:
+      - TZ=Europe/London
+      # --- Core Settings ---
+      - DOMAIN=https://vault.iroshan.uk
+      - SIGNUPS_ALLOWED=false           # LOCKED — account created, no new signups
+      - INVITATIONS_ALLOWED=false
+      - SHOW_PASSWORD_HINT=false
+      # --- Admin Panel ---
+      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
+      # --- Security Hardening ---
+      - LOGIN_RATELIMIT_MAX_BURST=5
+      - LOGIN_RATELIMIT_SECONDS=60
+      - ADMIN_RATELIMIT_MAX_BURST=3
+      - ADMIN_RATELIMIT_SECONDS=60
+      - PASSWORD_ITERATIONS=600000      # OWASP 2023 recommended PBKDF2 iterations
+      # --- Email (Gmail SMTP) ---
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_FROM_NAME=Vaultwarden
+      - SMTP_SECURITY=starttls
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_TIMEOUT=15
+      - REQUIRE_DEVICE_EMAIL=true       # Verify new devices via email
+      # --- Logging ---
+      - LOG_LEVEL=info                  # info captures auth events for audit trail
+      - LOG_FILE=/data/vaultwarden.log
+      - EXTENDED_LOGGING=true
+      - IP_HEADER=X-Forwarded-For       # Get real IP from NPM
+      # --- WebSocket (live sync) ---
+      - WEBSOCKET_ENABLED=true
+      # --- Feature Control ---
+      - SENDS_ALLOWED=true
+      - EMERGENCY_ACCESS_ALLOWED=true
+      - ORG_CREATION_USERS=none         # Only admin can create orgs
+      # --- 2FA ---
+      - AUTHENTICATOR_DISABLE_TIME_DRIFT=false
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./vaultwarden_data:/data
+    # No ports exposed to host — only accessible via NPM on proxy_net
+    networks:
+      - security_net
+      - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL                             # Drop ALL Linux capabilities
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    # Resource limits — prevent DoS from consuming host resources
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/alive"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --- SQLITE BACKUP HELPER ---
+  sqlite-helper:
+    build: ./sqlite-helper
+    container_name: sqlite-helper
+    restart: unless-stopped
+    volumes:
+      - ./vaultwarden_data:/data
+    networks:
+      - security_net
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits to prevent DoS
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.2"
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.vw-backup.schedule: "0 0 1 * * *"
+      ofelia.job-exec.vw-backup.command: "/bin/sh /data/backup-vaultwarden.sh"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  security_net:
+    name: security_net
+    external: true
+
+  proxy_net:
+    name: proxy_net
+    external: true

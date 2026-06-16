@@ -29,10 +29,16 @@ send_notification() {
     
     # Send to Ntfy
     if [ -n "${NTFY_URL:-}" ] && [ -n "${NTFY_TOPIC:-}" ]; then
+        local priority="high"
+        local tags="x"
+        if [ "${status}" = "SUCCESS" ]; then
+            priority="default"
+            tags="white_check_mark"
+        fi
         curl -s -X POST "${NTFY_URL}/${NTFY_TOPIC}" \
             -H "Title: Homelab Backup ${status}" \
-            -H "Priority: ${status == 'SUCCESS' && echo 'default' || echo 'high'}" \
-            -H "Tags: ${status == 'SUCCESS' && echo 'white_check_mark' || echo 'x'}" \
+            -H "Priority: ${priority}" \
+            -H "Tags: ${tags}" \
             -d "${message}" > /dev/null 2>&1 || true
     fi
 }
