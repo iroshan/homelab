@@ -1,8 +1,8 @@
-# Homelab Docker Restructure Plan
+# 🌐 Homelab Architecture and Setup Guide
 
 ## Service Categories & Stack Organization
 
-### 📁 PROPOSED DIRECTORY STRUCTURE
+### 📁 ACTIVE DIRECTORY STRUCTURE
 
 ```
 homelab/
@@ -21,6 +21,12 @@ homelab/
 ├── 05-knowledge-base/
 │   ├── docker-compose.yml
 │   └── .env
+├── 05-pkm/
+│   ├── docker-compose.yml
+│   └── .env
+├── 06-documentation/
+│   ├── docker-compose.yml
+│   └── .env
 ├── 06-media/
 │   ├── docker-compose.yml
 │   └── .env
@@ -36,6 +42,9 @@ homelab/
 ├── 10-backup/
 │   ├── docker-compose.yml
 │   └── .env
+├── 11-security/
+│   ├── docker-compose.yml
+│   └── .env
 ├── shared/
 │   ├── networks.yml        # Shared network definitions
 │   └── dns-config.yml      # Common DNS settings
@@ -43,6 +52,10 @@ homelab/
     ├── deploy-all.sh
     ├── stop-all.sh
     └── update-all.sh
+
+workout-tracker/            # Standalone workout tracker stack
+├── docker-compose.yml
+└── .env
 ```
 
 ---
@@ -227,14 +240,48 @@ volumes:
 
 ## 🗂️ STACK 10: BACKUP SYSTEMS
 **Directory:** `10-backup/`
-**Purpose:** Backup and disaster recovery
+**Purpose:** Deduplicated, encrypted backups with retention policies
 **Services:**
-- duplicati
-- kopia
+- kopia (backup server and Web UI)
+- ofelia (backup scheduler)
 
-**Network:** `backup_net`
+**Network:** `backup_net` + `proxy_net`
 
-**Volume access:** Needs read access to all other stacks' data
+**Backup mechanism:**
+- **Source directories:** `/backup-source` mounts the entire `/home/ubuntu/homelab` directory (read-only).
+- **Snapshot rules:** Excludes local logs, caches, and repositories via `.kopiaignore` using relative paths to prevent feedback loops.
+- **SQLite upload:** A custom script `backup-vaultwarden-gdrive.sh` handles copying Vaultwarden's database backup to staging and uploading it directly to the `gdrive-backups:vaultwarden-backups` remote.
+
+---
+
+## 🗂️ STACK 11: SECURITY & SECRETS
+**Directory:** `11-security/`
+**Purpose:** Vault and credential storage with isolated backups
+**Services:**
+- vaultwarden (Bitwarden-compatible server)
+- sqlite-helper (SQLite helper utility for backups)
+
+**Network:** `security_net` + `proxy_net`
+
+**Core Configuration:**
+- Vaultwarden runs as non-root user `1000:1000`, with all endpoints hardened (PBKDF2 iteration count raised, signups disabled, and device verification email enabled).
+- SMTP notification routing is configured via Google Mail (Gmail SMTP).
+- `sqlite-helper` runs natively in the security net, handling the database backup sequence via the internal `ofelia` cron schedule (at 1:00 AM daily), outputting consistent backups to `/data/backups/`.
+
+---
+
+## 🗂️ STANDALONE: WORKOUT TRACKER
+**Directory:** `workout-tracker/` (Outside homelab main directory)
+**Purpose:** Fitness tracking app
+**Services:**
+- workout-tracker (Flask Python app)
+
+**Network:** `infrastructure_net`
+
+**Core Configuration:**
+- Packaged as a production service running via `gunicorn` with 4 workers.
+- Runs as a non-root `python` user.
+- Host port exposure bound exclusively to `127.0.0.1:5005` on the host to enforce Cloudflare Tunnel access.
 
 ---
 
@@ -289,8 +336,11 @@ networks:
   backup_net:
     name: backup_net
     driver: bridge
+    
+  security_net:
+    name: security_net
+    driver: bridge
 ```
-
 ### Network Assignment Strategy:
 1. **Services exposed to internet:** `proxy_net` + their stack network
 2. **Services with databases:** Stay within stack network only
@@ -348,144 +398,79 @@ include:
 
 ---
 
-## 📋 MIGRATION CHECKLIST
+## 📋 OPERATIONAL STATUS CHECKLIST
 
-### Phase 1: Preparation
-- [ ] Create directory structure
-- [ ] Create shared network definitions
-- [ ] Create DNS configuration
-- [ ] Backup current compose file
-- [ ] Export all environment variables to separate .env files per stack
-
-### Phase 2: Core Infrastructure (Can't fail!)
-- [ ] Deploy Stack 1 (AdGuard + Cloudflared)
-- [ ] Verify DNS resolution working
-- [ ] Test internet connectivity through tunnel
-
-### Phase 3: Network Access
-- [ ] Deploy Stack 2 (NPM + Portainer)
-- [ ] Verify proxy working
-- [ ] Verify SSL certificates
-
-### Phase 4: Critical Services (Priority order)
-- [ ] Stack 3: Monitoring (so you can watch everything)
-- [ ] Stack 4: Productivity
-- [ ] Stack 9: Communication (Ntfy for alerts)
-
-### Phase 5: Data Services
-- [ ] Stack 5: Knowledge Base (has most databases)
-- [ ] Stack 7: Documents
-- [ ] Stack 6: Media
-
-### Phase 6: Nice-to-Haves
-- [ ] Stack 8: Utilities
-- [ ] Stack 10: Backups (set up last, backs up everything)
-
-### Phase 7: Validation
-- [ ] Test DNS resolution from each stack
-- [ ] Test inter-container communication
-- [ ] Test external access through NPM
-- [ ] Verify all volumes mounted correctly
-- [ ] Check all healthchecks passing
-- [ ] Test backup systems
+### 🔒 Core Security & Hardening Controls
+- [x] **no-new-privileges:true** set on all services to prevent privilege escalation.
+- [x] **Resource Limits** (CPU/Memory limits and reservations) applied to all services to prevent resource exhaustion or DoS.
+- [x] **Non-Root Execution**: Critical services (`memos`, `homelab-docs`, `workout-tracker`, and the Vaultwarden database helper) run under unprivileged users (`1000:1000` or native container users) with host directories chowned.
+- [x] **Capabilities Dropped**: High-risk services like Vaultwarden run with `cap_drop: [ALL]` to restrict system calls.
+- [x] **Isolated Databases**: Databases (e.g., PostgreSQL for Affine) stay on private stack networks and are not exposed on `proxy_net` or host ports.
+- [x] **Network Port Bindings**: Services like `workout-tracker` bound only to localhost (`127.0.0.1:5005`) to prevent direct ingress, routing traffic strictly via the Cloudflare Tunnel.
 
 ---
 
-## 🔐 SECURITY IMPROVEMENTS
+## 💾 BACKUP VALIDATION & MAINTENANCE
 
-### Per-Stack .env Files:
+### 1. SQLite Database Backup (Vaultwarden)
+The `sqlite-helper` container in `11-security` runs a database backup daily at 1:00 AM.
+To trigger it manually:
 ```bash
-# Instead of one giant .env, create:
-01-core-infrastructure/.env
-02-network-access/.env
-03-monitoring/.env
-# ... etc
+docker exec sqlite-helper sh /data/backup-vaultwarden.sh
+```
+*Backups are outputted to `/home/ubuntu/homelab/11-security/vaultwarden_data/backups/` and the last 7 daily backups are kept.*
+
+### 2. Kopia Snapshot Backup (Entire Homelab)
+Kopia creates hourly system state snapshots. Exclusions are managed in `/home/ubuntu/homelab/.kopiaignore` using relative paths to prevent backing up cache/logs recursively.
+To run a manual snapshot:
+```bash
+docker exec kopia kopia snapshot create /backup-source
+```
+To view all snapshots:
+```bash
+docker exec kopia kopia snapshot list
 ```
 
-### Network Isolation Benefits:
-1. Database services can't be accessed by random utilities
-2. Media stack isolated from knowledge base
-3. Monitoring has read-only access where needed
-4. Easier to implement firewall rules per network
+### 3. Google Drive Uploads
+Kopia executes the custom script `backup-vaultwarden-gdrive.sh` at 1:15 AM daily (15m after SQLite backup helper completes) which clones the database backup to staging and uploads it to Google Drive.
+To trigger it manually:
+```bash
+docker exec kopia sh /app/scripts/backup-vaultwarden-gdrive.sh
+```
+*Verify uploads in the Google Drive dashboard under the folder `vaultwarden-backups`.*
 
 ---
 
-## 🚀 DEPLOYMENT SCRIPTS
+## 🚀 ACTIVE DEPLOYMENT SCRIPTS
 
-### Deploy All (`scripts/deploy-all.sh`):
+### Complete Stack Deployment Order (`plan/deploy-all.sh`)
+When starting or upgrading the server, deploy stacks in this exact sequence to ensure external networks exist before they are referenced:
+
+1. **01-core-infrastructure** (Creates `infrastructure_net`)
+2. **02-network-access** (Creates `proxy_net`)
+3. **11-security** (Creates `security_net` — Vaultwarden & backups setup)
+4. **03-monitoring** (Creates `monitoring_net` — Uptime Kuma & Homepage)
+5. **04-productivity** (Creates `productivity_net`)
+6. **05-pkm** & **05-knowledge-base** (Creates `knowledge_net`)
+7. **06-documentation** & **06-media** (Creates `media_net` & `docs_net`)
+8. **07-documents** (Creates `documents_net`)
+9. **08-utilities** (Creates `utilities_net`)
+10. **09-communication** (Creates `communication_net`)
+11. **10-backup** (Creates `backup_net` — Kopia Snapshot scheduler)
+12. **workout-tracker** (Standalone stack)
+
+### Automated Backup Check Script
+Verify the scheduler is running:
 ```bash
-#!/bin/bash
-set -e
-
-STACKS=(
-  "01-core-infrastructure"
-  "02-network-access"
-  "03-monitoring"
-  "04-productivity"
-  "05-knowledge-base"
-  "06-media"
-  "07-documents"
-  "08-utilities"
-  "09-communication"
-  "10-backup"
-)
-
-# Create networks first
-docker compose -f shared/networks.yml up -d
-
-# Deploy each stack in order
-for stack in "${STACKS[@]}"; do
-  echo "🚀 Deploying $stack..."
-  cd "$stack"
-  docker compose up -d
-  cd ..
-  sleep 5  # Give services time to start
-done
-
-echo "✅ All stacks deployed!"
-```
-
-### Update Single Stack:
-```bash
-cd 05-knowledge-base/
-docker compose pull
-docker compose up -d
+docker logs backup-scheduler
 ```
 
 ---
 
-## 📊 EXPECTED IMPROVEMENTS
+## 📊 HOMELAB ARCHITECTURE ADVANTAGES
 
-### Before (Current Issues):
-- ❌ Single 1254-line compose file
-- ❌ DNS failures cascade through all services
-- ❌ Can't update one service without risk to others
-- ❌ Hard to debug which service is failing
-- ❌ All services can talk to all other services
-
-### After (New Structure):
-- ✅ ~10 focused compose files (50-150 lines each)
-- ✅ DNS failure isolated to infrastructure stack
-- ✅ Update individual stacks independently
-- ✅ Easy to identify failing stack
-- ✅ Network segmentation & security
-- ✅ Git-friendly (clear commit history per stack)
-- ✅ Faster restarts (only affected services)
-
----
-
-## 🎯 QUICK START RECOMMENDATION
-
-**Don't migrate everything at once!** Start with:
-
-1. **Week 1:** Core Infrastructure + Network Access
-2. **Week 2:** Add Monitoring + your most-used service stack
-3. **Week 3:** Migrate 2-3 more stacks
-4. **Week 4:** Complete migration
-
-This way you can:
-- Test the new structure with critical services
-- Learn the workflow
-- Keep old setup running as fallback
-- Gradually migrate when each stack is stable
+- ✅ **Strong Network Segmentation**: Compromised containers cannot communicate laterally across stacks.
+- ✅ **Host Isolation**: Ports are isolated to localhost (`127.0.0.1`) where possible, with NPM and Cloudflared handling external TLS termination.
+- ✅ **Stateless Backups**: Backup cache, logs, and configurations are mapped to host folders for ease of recovery.
+- ✅ **Zero Host Cron Dependencies**: Cron schedules are managed entirely inside Docker using `ofelia`, avoiding external OS dependencies.
 

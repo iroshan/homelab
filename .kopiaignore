@@ -1,0 +1,40 @@
+# Kopia Backup Exclusion Patterns
+# These paths will be excluded from backups
+
+# === Mounted Filesystems ===
+# rclone mounts (music, etc.)
+**/music/**
+**/mnt/rclone/**
+music/
+
+# === Temporary & Cache Data ===
+**/tmp/**
+**/temp/**
+**/.cache/**
+**/cache/**
+**/__pycache__/**
+**/node_modules/**
+
+# === Build Artifacts ===
+**/dist/**
+**/build/**
+**/.next/**
+
+# === Version Control ===
+**/.git/**
+**/.svn/**
+
+# === Database Transaction Logs ===
+**/pg_wal/**
+**/pg_log/**
+**/mysql-logs/**
+**/mysql-bin.*/**
+
+# === Docker Internal ===
+**/.docker/**
+
+# === Backup Tool Data ===
+10-backup/kopia-cache/
+10-backup/kopia-logs/
+10-backup/kopia-repository/
+10-backup/rclone-config/

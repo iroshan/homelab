@@ -15,11 +15,21 @@ services:
       - ./homepage_config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "3005:3000"
+      - "127.0.0.1:3005:3000"  # Proxied via NPM — localhost only
     networks:
       - monitoring_net
       - proxy_net
       - infrastructure_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -36,10 +46,15 @@ services:
     volumes:
       - ./uptime_kuma_data:/app/data
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'  # Proxied via NPM — localhost only
     networks:
       - monitoring_net
       - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
     logging:
       driver: "json-file"
       options:
@@ -51,7 +66,7 @@ services:
     container_name: dozzle
     restart: unless-stopped
     ports:
-      - "8888:8080"
+      - "127.0.0.1:8888:8080"  # Proxied via NPM — localhost only
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -66,6 +81,11 @@ services:
       - monitoring_net
       - proxy_net
       - infrastructure_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.1"
     logging:
       driver: "json-file"
       options:

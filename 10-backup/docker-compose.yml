@@ -27,7 +27,7 @@ services:
       file: ../shared/dns-config.yml
       service: dns-base
     ports:
-      - "51515:51515"  # Web UI
+      - "127.0.0.1:51515:51515"  # Web UI — proxied via NPM, localhost only
     volumes:
       # Kopia configuration and cache
       - ./kopia-config:/app/config
@@ -50,16 +50,16 @@ services:
       - proxy_net
     security_opt:
       - no-new-privileges:true
-    mem_limit: 512m
-    mem_reservation: 64m
-    cpus: "0.5"
+    mem_limit: 1024m
+    mem_reservation: 128m
+    cpus: "0.8"
     command: server start --insecure --address=0.0.0.0:51515 --server-username=${KOPIA_SERVER_USERNAME} --server-password=${KOPIA_SERVER_PASSWORD}
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.backup-daily.schedule: "0 0 2 * * *"
       ofelia.job-exec.backup-daily.command: "kopia snapshot create /backup-source --description 'Automated daily backup'"
-      # Vaultwarden → Google Drive backup (runs 1hr before Kopia snapshot)
-      ofelia.job-exec.vw-gdrive-backup.schedule: "0 0 1 * * *"
+      # Vaultwarden → Google Drive backup (runs 15m after SQLite backup helper)
+      ofelia.job-exec.vw-gdrive-backup.schedule: "0 15 1 * * *"
       ofelia.job-exec.vw-gdrive-backup.command: "sh /app/scripts/backup-vaultwarden-gdrive.sh"
     logging:
       driver: "json-file"
@@ -90,38 +90,6 @@ services:
         max-size: "5m"
         max-file: "2"
 
-
-  # --- RCLONE (MUSIC MOUNTING) ---
-  rclone:
-    image: rclone/rclone:latest
-    container_name: rclone-music
-    restart: unless-stopped
-    environment:
-      - TZ=Europe/London
-    extends:
-      file: ../shared/dns-config.yml
-      service: dns-base
-    volumes:
-      - ./rclone-config:/config/rclone
-      - /home/ubuntu/homelab/music:/mnt/music:shared
-    devices:
-      - /dev/fuse
-    cap_add:
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
-    networks:
-      - media_net
-    mem_limit: 256m
-    mem_reservation: 64m
-    cpus: "0.2"
-    command: "mount gdrive-music: /mnt/music --allow-other --vfs-cache-mode writes --log-level INFO"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 networks:
   backup_net:
     name: backup_net
@@ -129,8 +97,4 @@ networks:
   
   proxy_net:
     name: proxy_net
-    external: true
-  
-  media_net:
-    name: media_net
     external: true

@@ -59,34 +59,35 @@ Automated backup solution for entire homelab using:
 ```yaml
 volumes:
   - ./kopia-config:/app/config           # Repository config
-  - ./kopia-cache:/app/cache             # Performance cache
+  - ./kopia-cache:/app/cache             # Performance cache (10-backup/kopia-cache)
   - ./kopia-logs:/app/logs               # Logs
-  - ./rclone-config:/root/.config/rclone # rclone OAuth (CRITICAL!)
+  - ./rclone-config:/app/rclone          # rclone OAuth (CRITICAL! Aligned to Kopia's path)
 ```
 
-**Why:** Survives container recreation, easy to backup/restore
+**Why:** Survives container recreation, easy to backup/restore.
 
 ### 2. rclone Google Drive Setup
 
-**One-time configuration:**
+Since OAuth login requires interactive input and browser authorization, run the configuration command on the host terminal:
 
 ```bash
-docker exec -it kopia rclone config
+docker run --rm -it -v /home/ubuntu/homelab/10-backup/rclone-config:/config/rclone rclone/rclone config
 ```
 
 Steps:
 1. `n` (new remote)
 2. Name: `gdrive-backups`
-3. Storage: `15` (Google Drive)
+3. Storage: Select `Google Drive` (e.g. number `18` or `15` depending on list version)
 4. Client ID/Secret: Press Enter (use defaults)
 5. Scope: `1` (full access)
-6. Root folder: Press Enter (all of Drive)
-7. Service account: `n`
-8. Advanced: `n`
-9. Web browser: `n` (use manual auth)
-10. Copy URL, authorize in browser, paste code back
+6. Root folder / Service account: Press Enter (defaults)
+7. Advanced config: `n`
+8. Use web browser to authenticate: `n` (Choose **No**, as this is a remote server)
+9. Copy URL, authorize in browser, paste verification code back into the terminal.
+10. Confirm remote: `y`
+11. Type `q` to quit.
 
-**Result:** Config saved to `./rclone-config/rclone.conf` (persisted!)
+**Result:** Config saved to `./rclone-config/rclone.conf` (persisted!) and mapped directly to Kopia and other backup scripts.
 
 ### 3. Kopia Repository Connection
 
@@ -99,7 +100,7 @@ Steps:
 5. Password: `KOPIA_PASSWORD` from `.env`
 6. Click "Connect"
 
-**Result:** Repository created in Google Drive, encrypted
+**Result:** Repository created in Google Drive, encrypted.
 
 ### 4. Retention Policy
 
@@ -122,18 +123,34 @@ docker exec kopia kopia policy set --global \
 
 **Method:** ofelia (Docker job scheduler)
 
-**Configuration:** Via container labels on kopia service:
+**Configuration:** Via container labels on service containers:
 
+**Inside `11-security/docker-compose.yml` (sqlite-helper):**
+```yaml
+labels:
+  ofelia.enabled: "true"
+  ofelia.job-exec.vw-backup.schedule: "0 0 1 * * *"
+  ofelia.job-exec.vw-backup.command: "/bin/sh /data/backup-vaultwarden.sh"
+```
+*Triggers the consistent SQLite backup of Vaultwarden daily at 1:00 AM.*
+
+**Inside `10-backup/docker-compose.yml` (kopia):**
 ```yaml
 labels:
   ofelia.enabled: "true"
   ofelia.job-exec.backup-daily.schedule: "0 0 2 * * *"
   ofelia.job-exec.backup-daily.command: "kopia snapshot create /backup-source --description 'Automated daily backup'"
+  # Vaultwarden SQLite to GDrive upload (runs 15m after backup helper)
+  ofelia.job-exec.vw-gdrive-backup.schedule: "0 15 1 * * *"
+  ofelia.job-exec.vw-gdrive-backup.command: "sh /app/scripts/backup-vaultwarden-gdrive.sh"
 ```
 
-**Schedule:** Daily at 2:00 AM (London timezone)
+**Schedule summary:**
+- 1:00 AM: Vaultwarden database helper generates consistent SQLite backup.
+- 1:15 AM: Kopia copies latest Vaultwarden SQLite backup and uploads to Google Drive.
+- 2:00 AM: Kopia executes daily snapshot of `/backup-source` (entire homelab folder).
 
-**Why ofelia:** Host system may not have `cron` installed
+**Why ofelia:** Host system may not have `cron` installed.
 
 ## Deployment Steps
 
@@ -272,44 +289,64 @@ grep "snapshot created" kopia-logs/*.log
 
 ## Lessons Learned
 
-### Issue 1: rclone Config Lost on Container Restart
+### Issue 1: rclone Config Mount Path Mismatch
 
-**Problem:** rclone config was inside container, lost when recreated
+**Problem:** rclone config inside the Kopia image was hardcoded to `/app/rclone/rclone.conf`. The docker-compose file mounted the folder to `/root/.config/rclone`. Recreating the container deleted the token, crashing Kopia.
 
-**Solution:** Added volume mount:
+**Solution:** Changed mount path in Kopia:
 ```yaml
-- ./rclone-config:/root/.config/rclone
+- ./rclone-config:/app/rclone
 ```
 
-**Result:** Config persists forever, one-time setup only
+**Result:** Configuration persists across container updates.
 
-### Issue 2: No cron on Host
+### Issue 2: Excluded Cache Loop and Out-of-Memory (OOM)
 
-**Problem:** Host didn't have `crontab` installed
+**Problem:** Kopia snapshot was configured with absolute ignore paths (`/home/ubuntu/homelab/...`), but inside the container the source directory was `/backup-source`. This caused Kopia to back up its own cache and active repository files, creating an infinite feedback loop that hit the 512MB container memory limit (Exit 137).
 
-**Solution:** Used ofelia (Docker-based scheduler)
-
-**Result:** Works perfectly, no host dependencies
-
-### Issue 3: YAML Syntax Error
-
-**Problem:** Unquoted colon in command broke YAML parsing
-
-**Fix:** Quote commands with colons:
-```yaml
-command: "mount gdrive-music: /mnt/music ..."
+**Solution:** Updated `.kopiaignore` in `/home/ubuntu/homelab/.kopiaignore` using relative paths relative to the backup source:
 ```
+10-backup/kopia-cache/
+10-backup/kopia-logs/
+10-backup/kopia-repository/
+```
+Also raised Kopia's memory limit to `1024m` and CPU to `0.8` to run the Kopia server and Kopia CLI concurrently without resource starvation.
+
+### Issue 3: Missing sqlite3 Binaries
+
+**Problem:** Both Kopia and Vaultwarden containers lacked `sqlite3` in their default Alpine images, causing database backup scripts to fail instantly.
+
+**Solution:** Created a lightweight custom helper service `sqlite-helper` in `11-security/docker-compose.yml` that mounts the Vaultwarden data directory, runs natively as UID 1000, has `sqlite3` pre-installed, and outputs consistent SQLite backups. Kopia's Daily backup copies this consistent backup to staging and uploads to Google Drive.
+
+### Issue 4: Notification Syntax Error in Backup Script
+
+**Problem:** Inline bash checks (`${status == 'SUCCESS' && ...}`) inside `backup.sh` notification headers caused immediate crashes of the script during execution.
+
+**Solution:** Refactored header compilation to use standard shell variables.
+
+### Issue 5: Unused rclone-music restarting loop
+
+**Problem:** The `rclone-music` service was crashing on startup because a `[gdrive-music]` remote section was not configured in `rclone.conf`.
+
+**Solution:** Removed the service from `10-backup/docker-compose.yml` to prevent restart loops, as the music-mounting service is not currently required.
 
 ## Files Reference
 
 **In `/home/ubuntu/homelab/10-backup/`:**
+- `docker-compose.yml` - Kopia and Ofelia service definitions.
+- `.env` - Kopia credential keys.
+- `scripts/backup.sh` - Main system backup script with Telegram/Ntfy notification logic.
+- `scripts/backup-vaultwarden-gdrive.sh` - Vaultwarden SQLite Google Drive sync script.
+- `rclone-config/rclone.conf` - Google OAuth credentials file.
+- `kopia-config/` - Kopia repository connection parameters.
+- `kopia-cache/` - Cached blocks.
 
-- `docker-compose.yml` - Service definitions
-- `.env` - Passwords and configuration
-- `README.md` - Full usage guide
-- `kopia-config/` - Repository connection (persisted)
-- `rclone-config/` - Google OAuth (persisted)
-- `scripts/` - Backup scripts and exclusions
+**In `/home/ubuntu/homelab/11-security/`:**
+- `docker-compose.yml` - Vaultwarden and SQLite backup helper service.
+- `backup-vaultwarden.sh` - Database and attachments backup script.
+
+**In `/home/ubuntu/homelab/`:**
+- `.kopiaignore` - Exclusion rules file.
 
 ## Related Documentation
 
@@ -319,5 +356,5 @@ command: "mount gdrive-music: /mnt/music ..."
 
 ---
 
-**Last Updated:** 2026-02-12  
-**Status:** ✅ Production Ready
+**Last Updated:** 2026-06-16  
+**Status:** ✅ Production Ready & Fully Hardened

@@ -21,7 +21,7 @@ services:
       file: ../shared/dns-config.yml
       service: dns-base
     ports:
-      - "8010:8000"
+      - "127.0.0.1:8010:8000"  # Proxied via NPM — localhost only
     volumes:
       # Mount entire homelab directory as docs root
       - /home/ubuntu/homelab:/docs

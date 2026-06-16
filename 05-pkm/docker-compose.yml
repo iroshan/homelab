@@ -12,7 +12,7 @@ services:
     container_name: affine
     restart: unless-stopped
     ports:
-      - "3010:3010"
+      - "127.0.0.1:3010:3010"  # Proxied via NPM — localhost only
     extends:
       file: ../shared/dns-config.yml
       service: dns-base
@@ -41,6 +41,14 @@ services:
     networks:
       - pkm_net
       - proxy_net
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); http.get('http://localhost:3010/', (res) => { if (res.statusCode === 200 || res.statusCode === 302) process.exit(0); else process.exit(1); }).on('error', (err) => { process.exit(1); });"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -88,6 +96,9 @@ services:
       - no-new-privileges:true
     networks:
       - pkm_net
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
     logging:
       driver: "json-file"
       options:
@@ -110,6 +121,9 @@ services:
       - no-new-privileges:true
     networks:
       - pkm_net
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.1"
     logging:
       driver: "json-file"
       options:

@@ -59,8 +59,8 @@ fi
 # Upload to Google Drive
 echo "[$(date)] Uploading to Google Drive..."
 rclone copy "$LOCAL_BACKUP_DIR" "$GDRIVE_DEST" \
-    --include "db_${TIMESTAMP}.sqlite3" \
-    --include "attachments_${TIMESTAMP}/**" \
+    --include "db_${TIMESTAMP_PART}.sqlite3" \
+    --include "attachments_${TIMESTAMP_PART}/**" \
     --transfers 4 \
     --log-level INFO
 

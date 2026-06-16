@@ -51,11 +51,7 @@ echo "========================================" | tee -a "${LOG_FILE}"
 
 START_TIME=$(date +%s)
 
-# Run Kopia snapshot
-echo "Creating snapshot..." | tee -a "${LOG_FILE}"
-
 if kopia snapshot create "${BACKUP_SOURCE}" \
-    --file-ignore="${EXCLUDE_FILE}" \
     --parallel=8 \
     --progress-update-interval=30s 2>&1 | tee -a "${LOG_FILE}"; then
     
