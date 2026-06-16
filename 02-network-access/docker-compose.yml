@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - '80:80'
-      - '127.0.0.1:81:81'  # Admin panel — localhost only
+      - '100.72.31.46:81:81'  # Admin panel — Tailscale only
       - '443:443'
     environment:
       - TZ=Europe/London
@@ -53,7 +53,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./portainer_data:/data
     ports:
-      - "127.0.0.1:9000:9000"  # Proxied via NPM — localhost only
+      - "100.72.31.46:9000:9000"  # Portainer UI — Tailscale only
     networks:
       - proxy_net
       - infrastructure_net

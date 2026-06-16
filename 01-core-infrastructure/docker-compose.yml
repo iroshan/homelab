@@ -8,7 +8,7 @@ services:
     ports:
       - "5353:53/tcp"
       - "5353:53/udp"
-      - "127.0.0.1:3000:3000"  # Admin UI — localhost only
+      - "100.72.31.46:3000:3000"  # Admin UI — Tailscale only
     environment:
       - TZ=Europe/London
     volumes:
