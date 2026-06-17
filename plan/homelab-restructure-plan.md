@@ -62,22 +62,12 @@ workout-tracker/            # Standalone workout tracker stack
 
 ## 🗂️ STACK 1: CORE INFRASTRUCTURE
 **Directory:** `01-core-infrastructure/`
-**Purpose:** Essential services that everything else depends on
+**Purpose:** External access ingress via Cloudflare Tunnel
 **Services:**
-- adguard (DNS & ad blocking)
 - cloudflared (Cloudflare tunnel)
 
 **Priority:** Deploy FIRST
-**Network:** `infrastructure_net` (isolated)
-
-**DNS FIX:**
-```yaml
-# Change AdGuard port binding to avoid conflict
-ports:
-  - "5053:53/tcp"    # Use non-standard port externally
-  - "5053:53/udp"
-  - "3000:3000/tcp"
-```
+**Network:** `infrastructure_net` + `proxy_net`
 
 ---
 
@@ -91,7 +81,7 @@ ports:
 **Priority:** Deploy SECOND (after core infrastructure)
 **Network:** `proxy_net` + `infrastructure_net`
 
-**Depends on:** Stack 1 (for DNS)
+**Depends on:** None (uses public fallback DNS / host Tailscale network)
 
 ---
 
@@ -345,56 +335,71 @@ networks:
 1. **Services exposed to internet:** `proxy_net` + their stack network
 2. **Services with databases:** Stay within stack network only
 3. **Monitoring tools:** `monitoring_net` + access to other networks as needed
-4. **DNS (AdGuard):** `infrastructure_net` + `proxy_net`
+4. **Reverse Proxy (NPM):** `proxy_net` + `infrastructure_net`
 
 ---
 
-## 🔧 DNS CONFIGURATION FIX
+## 🔧 DNS CONFIGURATION
 
-### Create shared DNS config:
-**File:** `shared/dns-config.yml`
-
-```yaml
-# Common DNS settings for all containers
-x-dns-settings: &dns-settings
-  dns:
-    - 172.18.0.2  # AdGuard container IP (set static)
-    - 1.1.1.1     # Cloudflare fallback
-    - 8.8.8.8     # Google fallback
-  dns_search:
-    - homelab.local
-```
-
-### Set AdGuard static IP:
+### Shared DNS Config
+**File:** [dns-config.yml](file:///home/ubuntu/homelab/shared/dns-config.yml)
 
 ```yaml
-# In 01-core-infrastructure/docker-compose.yml
 services:
-  adguard:
-    networks:
-      infrastructure_net:
-        ipv4_address: 172.18.0.2  # Static IP for DNS
-      proxy_net:
-
-networks:
-  infrastructure_net:
-    ipam:
-      config:
-        - subnet: 172.18.0.0/24
+  dns-base:
+    dns:
+      - 1.1.1.1     # Cloudflare
+      - 8.8.8.8     # Google fallback
+    dns_search:
+      - homelab.local
 ```
 
-### Reference in other stacks:
+### Reference in Stack Services
+Services import this common configuration via the `extends` mechanism in their `docker-compose.yml`:
 
 ```yaml
-# Example in any stack's docker-compose.yml
 services:
   myservice:
-    <<: *dns-settings  # Import common DNS config
-    
-# Include at top of each compose file:
-include:
-  - path: ../shared/dns-config.yml
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
 ```
+
+---
+
+## 📶 TAILSCALE INTEGRATION & PORT HARDENING
+
+To secure administrative interfaces and internal tools while enabling safe remote access, the server uses a hybrid approach combining **Tailscale** and **Localhost port bindings**.
+
+### Tailscale Host Config
+* **Tailscale Host IP:** `100.72.31.46`
+* **Tailnet:** `tail161db.ts.net`
+
+### Administrative Interface Protection
+All internal administrative dashboards are restricted to the Tailscale interface only, preventing public internet or local LAN exposure:
+* **Nginx Proxy Manager Admin Console:** Bound to `100.72.31.46:81` (Internal container port 81). Accessible only via `http://100.72.31.46:81`.
+* **Portainer Container Management UI:** Bound to `100.72.31.46:9000` (Internal container port 9000). Accessible only via `http://100.72.31.46:9000`.
+
+### Internal Service Localhost Hardening
+All other internal web applications and services that are proxied by Nginx Proxy Manager (or routed via Cloudflare Tunnel) are bound strictly to `127.0.0.1` (localhost only) on the host to block direct network access:
+* **Homepage Dashboard:** Bound to `127.0.0.1:3005:3000`
+* **Uptime Kuma:** Bound to `127.0.0.1:3001:3001`
+* **Dozzle Log Viewer:** Bound to `127.0.0.1:8888:8080`
+* **Memos Note-Taking:** Bound to `127.0.0.1:5230:5230`
+* **Affine Knowledge Base:** Bound to `127.0.0.1:3010:3010`
+* **MkDocs Material Docs Site:** Bound to `127.0.0.1:8010:8000`
+* **Kopia Backup Web UI:** Bound to `127.0.0.1:51515:51515`
+* **Workout Tracker (Flask):** Bound to `127.0.0.1:5005:5000`
+
+### Nginx Proxy Manager Configured Hosts
+The active proxy mappings are stored in the SQLite database (`/home/ubuntu/homelab/02-network-access/npm/data/database.sqlite`):
+
+| Public Domain | Target Service Container | Target Port | Status |
+| :--- | :--- | :--- | :--- |
+| `logs.iroshan.uk` | `dozzle` | `8080` | ✅ Active |
+| `pkm.iroshan.uk` | `affine` | `3010` | ✅ Active |
+| `vault.iroshan.uk` | `vaultwarden` | `80` | ✅ Active |
+| `adguard.iroshan.uk` | `adguard` | `3000` | ❌ Defunct (AdGuard Removed) |
 
 ---
 
@@ -406,7 +411,7 @@ include:
 - [x] **Non-Root Execution**: Critical services (`memos`, `homelab-docs`, `workout-tracker`, and the Vaultwarden database helper) run under unprivileged users (`1000:1000` or native container users) with host directories chowned.
 - [x] **Capabilities Dropped**: High-risk services like Vaultwarden run with `cap_drop: [ALL]` to restrict system calls.
 - [x] **Isolated Databases**: Databases (e.g., PostgreSQL for Affine) stay on private stack networks and are not exposed on `proxy_net` or host ports.
-- [x] **Network Port Bindings**: Services like `workout-tracker` bound only to localhost (`127.0.0.1:5005`) to prevent direct ingress, routing traffic strictly via the Cloudflare Tunnel.
+- [x] **Network Port Bindings**: Services bound strictly to localhost (`127.0.0.1`) or Tailscale IP (`100.72.31.46`) to prevent unauthorized ingress.
 
 ---
 

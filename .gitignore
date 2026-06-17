@@ -13,6 +13,10 @@
 **/mongodb_data/
 **/mariadb_data/
 **/redis_data/
+**/portainer_data/
+**/uptime_kuma_data/
+**/affine_data/
+**/vaultwarden_data/
 **/uploads/
 **/storage/
 **/media/

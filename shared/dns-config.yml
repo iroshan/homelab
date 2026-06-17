@@ -1,8 +1,7 @@
 services:
   dns-base:
     dns:
-      - 172.18.0.2  # AdGuard container IP (set static)
-      - 1.1.1.1     # Cloudflare fallback
+      - 1.1.1.1     # Cloudflare
       - 8.8.8.8     # Google fallback
     dns_search:
       - homelab.local
