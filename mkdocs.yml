@@ -63,6 +63,7 @@ nav:
   
   - Infrastructure:
       - Overview: plan/homelab-restructure-plan.md
+      - Infrastructure Analysis: plan/INFRASTRUCTURE-ANALYSIS.md
       - Network Architecture: plan/NETWORK-ARCHITECTURE-GUIDE.md
       - Network Reference: plan/NETWORK-REFERENCE-CARD.md
       - Multi-Network Deployment: plan/MULTI-NETWORK-DEPLOYMENT.md

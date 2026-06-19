@@ -5,19 +5,22 @@ Self-hosted homelab infrastructure with Docker-based services and automated back
 ## 🏗️ Architecture
 
 Organized into modular stacks:
-- **01-core-infrastructure** - DNS (AdGuard), Proxy (NGINX), Tunnel (Cloudflare)
-- **02-network** - WireGuard VPN access
-- **03-monitoring** - Glances, Uptime Kuma
-- **04-productivity** - Memos + Telegram bot
-- **09-communication** - Ntfy notifications
-- **10-backup** - Kopia (Google Drive), rclone, automated Git backups
+- **01-core-infrastructure** - Cloudflare Tunnel
+- **02-network-access** - Nginx Proxy Manager (NPM), Portainer CE
+- **03-monitoring** - Homepage, Uptime Kuma, Dozzle
+- **04-productivity** - Memos + Telegram Memos Bot
+- **05-pkm** - Affine PKM (Postgres + Redis)
+- **06-documentation** - MkDocs Documentation
+- **10-backup** - Kopia (Google Drive), ofelia (scheduler)
+- **11-security** - Vaultwarden, sqlite-helper
+- **workout-tracker** (standalone) - Flask Workout Tracker App
 
 ## 🚀 Quick Start
 
 ```bash
 # Deploy all stacks in order
 cd /home/ubuntu/homelab
-./scripts/deploy-all.sh
+./plan/deploy-all.sh
 
 # Or deploy individual stacks
 cd 01-core-infrastructure
@@ -28,15 +31,17 @@ docker compose up -d
 
 ```
 homelab/
-├── 01-core-infrastructure/   # Core services
-├── 02-network/               # VPN access
-├── 03-monitoring/            # Monitoring tools
-├── 04-productivity/          # Productivity apps
-├── 09-communication/         # Notification services
-├── 10-backup/                # Backup systems
+├── 01-core-infrastructure/   # Core routing / tunnels
+├── 02-network-access/        # Reverse proxy and Portainer
+├── 03-monitoring/            # Dashboards and monitoring
+├── 04-productivity/          # Memos notes stack
+├── 05-pkm/                   # Affine knowledge management
+├── 06-documentation/         # MkDocs material site
+├── 10-backup/                # Kopia snapshot systems
+├── 11-security/              # Password vault (Vaultwarden)
 ├── shared/                   # Shared configs (networks, DNS)
-├── scripts/                  # Automation scripts
-└── plan/                     # Documentation & guides
+├── scripts/                  # Git automation scripts
+└── plan/                     # Documentation & setup guides
 ```
 
 ## 🔐 Security
