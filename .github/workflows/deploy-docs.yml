@@ -53,11 +53,13 @@ jobs:
             --directory site
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: homelab-docs
-          directory: site
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm install -g wrangler
+          wrangler pages deploy site \
+            --project-name homelab-docs \
+            --branch main \
+            --commit-dirty=true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
