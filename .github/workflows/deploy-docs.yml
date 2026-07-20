@@ -54,8 +54,8 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         run: |
-          npm install -g wrangler
-          wrangler pages deploy site \
+          npx wrangler pages project create homelab-docs --production-branch main || true
+          npx wrangler pages deploy site \
             --project-name homelab-docs \
             --branch main \
             --commit-dirty=true
