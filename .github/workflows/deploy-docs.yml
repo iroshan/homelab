@@ -36,21 +36,35 @@ jobs:
       - name: Build MkDocs site
         run: mkdocs build --site-dir site
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Encrypt site with Staticrypt
+      - name: Add Cloudflare Pages Basic Auth Middleware
         run: |
-          npm install -g staticrypt
-          find site -name "*.html" | xargs staticrypt \
-            --password "${{ secrets.STATICRYPT_PASSWORD }}" \
-            --short \
-            --template-title "Homelab Docs" \
-            --template-instructions "Enter the site password to access documentation." \
-            --remember 30 \
-            --directory site
+          mkdir -p functions
+          cat > functions/_middleware.js << 'EOF'
+          export async function onRequest(context) {
+            const { request, next, env } = context;
+            const authHeader = request.headers.get("Authorization");
+            const validPassword = env.STATICRYPT_PASSWORD || "Indika@464";
+
+            if (authHeader) {
+              const [scheme, encoded] = authHeader.split(" ");
+              if (/^Basic$/i.test(scheme) && encoded) {
+                const decoded = atob(encoded);
+                const colonIndex = decoded.indexOf(":");
+                const pass = colonIndex !== -1 ? decoded.substring(colonIndex + 1) : "";
+                if (pass === validPassword) {
+                  return await next();
+                }
+              }
+            }
+
+            return new Response("Access Denied: Homelab Documentation is Protected.", {
+              status: 401,
+              headers: {
+                "WWW-Authenticate": 'Basic realm="Homelab Documentation"',
+              },
+            });
+          }
+          EOF
 
       - name: Deploy to Cloudflare Pages
         run: |
