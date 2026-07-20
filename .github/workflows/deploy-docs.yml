@@ -1,0 +1,82 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install MkDocs and Material theme
+        run: |
+          pip install mkdocs-material
+
+      - name: Resolve symlinks in docs/
+        run: |
+          # GitHub Actions checks out symlinks correctly, but we need
+          # to resolve them for mkdocs to follow during build
+          cp --remove-destination $(readlink -f docs/index.md) docs/index.md
+          cp --remove-destination $(readlink -f docs/SETUP-GIT.md) docs/SETUP-GIT.md
+          cp --remove-destination -r $(readlink -f docs/plan) docs/plan_real
+          rm docs/plan
+          mv docs/plan_real docs/plan
+
+      - name: Build MkDocs site
+        run: mkdocs build --strict --site-dir site
+
+      - name: Set up Node.js for Staticrypt
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Staticrypt
+        run: npm install -g staticrypt
+
+      - name: Encrypt site with Staticrypt
+        run: |
+          staticrypt site/**/*.html site/*.html \
+            --password "${{ secrets.STATICRYPT_PASSWORD }}" \
+            --short \
+            --template-title "Homelab Docs — Login Required" \
+            --template-instructions "Enter the site password to access the homelab documentation." \
+            --remember 30 \
+            --directory site
+        env:
+          STATICRYPT_PASSWORD: ${{ secrets.STATICRYPT_PASSWORD }}
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -82,7 +82,13 @@ music/
 Music/
 
 # Documentation site (symlinks to actual files)
-docs/
+# Note: docs/SETUP-GIT.md, docs/index.md, docs/plan are committed as symlinks
+# New real files (e.g. disaster-recovery/) are allowed via exceptions below
+docs/*
+!docs/SETUP-GIT.md
+!docs/index.md
+!docs/plan
+!docs/disaster-recovery/
 
 # AdGuard configuration (generated, contains runtime data)
 **/adguard_config/

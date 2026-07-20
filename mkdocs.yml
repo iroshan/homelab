@@ -1,7 +1,7 @@
 site_name: Homelab Documentation
-site_description: Complete homelab infrastructure documentation and guides
-site_author: Homelab Admin
-site_url: http://localhost:8010
+site_description: Complete homelab infrastructure documentation, guides, and disaster recovery runbook
+site_author: Iroshan
+site_url: https://iroshan.github.io/homelab/
 docs_dir: docs
 
 theme:
@@ -89,3 +89,12 @@ nav:
   - Documentation Site:
       - Implementation: plan/DOCS-SITE-IMPLEMENTATION-GUIDE.md
       - Quick Reference: plan/DOCS-SITE-QUICK-REFERENCE.md
+  
+  - 🆘 Disaster Recovery:
+      - Overview: disaster-recovery/index.md
+      - Prerequisites: disaster-recovery/00-prerequisites.md
+      - 1 - Provision Server: disaster-recovery/01-provision-server.md
+      - 2 - Restore Secrets: disaster-recovery/02-restore-secrets.md
+      - 3 - Deploy Stacks: disaster-recovery/03-deploy-stacks.md
+      - 4 - Restore Data: disaster-recovery/04-restore-data.md
+      - 5 - Verify: disaster-recovery/05-verify.md
