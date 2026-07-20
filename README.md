@@ -58,7 +58,7 @@ homelab/
 
 ## 📚 Documentation
 
-See [`plan/`](./plan/) directory for:
+See [`plan/`](plan/README.md) directory for:
 - Implementation guides
 - Network architecture
 - Deployment procedures

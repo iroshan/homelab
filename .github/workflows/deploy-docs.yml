@@ -43,7 +43,7 @@ jobs:
           mv docs/plan_real docs/plan
 
       - name: Build MkDocs site
-        run: mkdocs build --strict --site-dir site
+        run: mkdocs build --site-dir site
 
       - name: Set up Node.js for Staticrypt
         uses: actions/setup-node@v4

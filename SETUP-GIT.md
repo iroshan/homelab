@@ -143,4 +143,4 @@ Required scope: `repo` (all)
 
 ---
 
-**Need help?** Check the full guide: [`plan/GIT-SETUP-GUIDE.md`](../plan/GIT-SETUP-GUIDE.md)
+**Need help?** Check the full guide: [`plan/GIT-IMPLEMENTATION-GUIDE.md`](../plan/GIT-IMPLEMENTATION-GUIDE.md)
