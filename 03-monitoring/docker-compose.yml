@@ -1,40 +1,5 @@
 services:
 
-  homepage:
-    image: ghcr.io/gethomepage/homepage:v0.9.10
-    container_name: homepage
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/London
-    extends:
-      file: ../shared/dns-config.yml
-      service: dns-base
-    volumes:
-      - ./homepage_config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "127.0.0.1:3005:3000"  # Proxied via NPM — localhost only
-    networks:
-      - monitoring_net
-      - proxy_net
-      - infrastructure_net
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 256m
-    mem_reservation: 64m
-    cpus: "0.25"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   uptime-kuma:
     image: louislam/uptime-kuma:1.23.17

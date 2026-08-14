@@ -1,0 +1,113 @@
+services:
+
+  # AIOSTREAMS - Stream aggregator with built-in Usenet & Debrid proxy
+  aiostreams:
+    image: ghcr.io/viren070/aiostreams:nightly
+    container_name: aiostreams
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3060:3000"
+    environment:
+      - BASE_URL=${BASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - AIOSTREAMS_AUTH=${AIOSTREAMS_AUTH}
+    volumes:
+      - ./data/aiostreams:/app/data
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    networks:
+      - media_net
+      - proxy_net
+    mem_limit: 1024m
+    mem_reservation: 256m
+    cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # AIOMETADATA - Rich metadata & catalog provider with comprehensive warming
+  aiometadata:
+    image: ghcr.io/cedya77/aiometadata:latest
+    container_name: aiometadata
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3232:3232"
+    environment:
+      - HOST_NAME=${HOST_NAME}
+      - ADMIN_KEY=${ADMIN_KEY}
+      - DATABASE_URI=${DATABASE_URI}
+      - REDIS_URL=${REDIS_URL}
+    volumes:
+      - ./data/aiometadata:/app/addon/data
+    depends_on:
+      - aiometadata_redis
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    networks:
+      - media_net
+      - proxy_net
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # AIOMETADATA REDIS CACHE
+  aiometadata_redis:
+    image: redis:7-alpine
+    container_name: aiometadata_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --save 3600 1
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - media_net
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # NZBDAVEX - Usenet streaming engine & WebDAV bridge
+  nzbdavex:
+    image: ghcr.io/qooode/nzbdavex:edge
+    container_name: nzbdavex
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3080:3000"
+    environment:
+      - DISABLE_FRONTEND_AUTH=${DISABLE_FRONTEND_AUTH}
+    volumes:
+      - ./data/nzbdavex:/config
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    networks:
+      - media_net
+      - proxy_net
+    mem_limit: 1024m
+    mem_reservation: 256m
+    cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  media_net:
+    name: media_net
+    external: true
+  proxy_net:
+    name: proxy_net
+    external: true
