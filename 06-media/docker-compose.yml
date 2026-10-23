@@ -17,6 +17,8 @@ services:
       - COMMUNITY_FORMATTERS=${COMMUNITY_FORMATTERS}
       - COMMUNITY_REMOTE_SOURCES=${COMMUNITY_REMOTE_SOURCES}
       - COMMUNITY_REMOTE_REFRESH_INTERVAL=${COMMUNITY_REMOTE_REFRESH_INTERVAL}
+      - REGEX_FILTER_ACCESS=${REGEX_FILTER_ACCESS}
+      - TRUSTED_UUIDS=${TRUSTED_UUIDS}
     volumes:
       - ./data/aiostreams:/app/data
     extends:
@@ -46,6 +48,7 @@ services:
       - ADMIN_KEY=${ADMIN_KEY}
       - DATABASE_URI=${DATABASE_URI}
       - REDIS_URL=${REDIS_URL}
+      - TMDB_API_KEY=${TMDB_API_KEY}
     volumes:
       - ./data/aiometadata:/app/addon/data
     depends_on:
@@ -67,7 +70,7 @@ services:
 
   # AIOMETADATA REDIS CACHE
   aiometadata_redis:
-    image: redis:7-alpine
+    image: redis:alpine
     container_name: aiometadata_redis
     restart: unless-stopped
     command: redis-server --appendonly yes --save 3600 1
