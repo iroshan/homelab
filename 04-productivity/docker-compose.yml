@@ -193,6 +193,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # --- ACTUAL-AI (SCHEDULED AUTO-CATEGORIZER VIA GEMINI) ---
+  actual-ai:
+    image: docker.io/sakowicz/actual-ai:latest
+    container_name: actual-ai
+    restart: unless-stopped
+    depends_on:
+      actual-budget:
+        condition: service_healthy
+    env_file:
+      - ./actual-ai.env
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    # No exposed ports — internal scheduled worker on productivity_net
+    networks:
+      - productivity_net
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   productivity_net:
     name: productivity_net

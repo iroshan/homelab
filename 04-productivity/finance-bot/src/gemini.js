@@ -155,3 +155,57 @@ Keep it under 380 words and mobile-friendly.`;
     temperature: 0.3,
   });
 }
+
+export async function parseReceiptPhoto({ imageBase64, mimeType, categoryNames, userCaption }) {
+  const catList = categoryNames.join(', ');
+  const prompt = `You are reading a UK shopping receipt photo for Actual Budget (currency GBP £).
+Allowed Actual Budget expense categories (use ONLY exact names from this list):
+${catList}
+
+User note (if any): ${userCaption || '(none)'}
+
+Instructions:
+1. Extract the store name, receipt date (YYYY-MM-DD, or null if unreadable), and final amount paid (totalGBP, positive number after discounts/clubcard/nectar savings).
+2. Classify each purchased item into the best matching category from the allowed list:
+   - Food, drinks, fresh produce, household cleaning, toiletries/bin bags -> "Groceries"
+   - Non-food items like clothes, toys, kitchenware, electronics, garden items, tools, Aldi Specialbuys -> "Shopping & Online" (unless user note specifies e.g. "Partner & Family" or "Holidays & Days Out")
+   - Pharmacy/medicine/personal grooming -> "Health & Personal Care"
+   - Fuel/car products -> "Car, Fuel & Parking"
+   - Hot takeaway / cafe food -> "Eating Out & Takeaways"
+3. Aggregate items by category into "splits", making sure the sum of split amounts equals totalGBP (distribute any multi-buy discount proportionally or subtract from the matching category).
+4. Return ONLY valid JSON (no markdown fences) matching this exact schema:
+{
+  "store": "string",
+  "date": "YYYY-MM-DD or null",
+  "totalGBP": 0.00,
+  "confidence": "high | medium | low",
+  "splits": [
+    { "category": "Exact Category Name", "amountGBP": 0.00, "summary": "brief list of key items" }
+  ],
+  "nonGroceryItems": [
+    { "item": "item name", "amountGBP": 0.00, "category": "Exact Category Name" }
+  ]
+}`;
+
+  const contents = [
+    {
+      role: 'user',
+      parts: [
+        { text: prompt },
+        { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
+      ],
+    },
+  ];
+
+  const raw = await generateWithFallback(contents, {
+    temperature: 0.1,
+    responseMimeType: 'application/json',
+  });
+
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
+  if (!parsed || typeof parsed.totalGBP !== 'number' || parsed.totalGBP <= 0) {
+    throw new Error('Could not read a valid total from this receipt photo. Try a clearer, well-lit photo.');
+  }
+  return parsed;
+}

@@ -12,6 +12,7 @@
 **/truelayer_data/
 **/finance_bot_data/
 **/finance_exports/
+**/actual_mcp_data/
 **/postgres_data/
 **/mysql_data/
 **/mongodb_data/

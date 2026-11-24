@@ -1,8 +1,14 @@
 import 'dotenv/config';
 import http from 'http';
-import { getFinanceSnapshot, fetchTrueLayerHealth, shutdownActual } from './actual.js';
+import {
+  fetchTrueLayerHealth,
+  findMatchingTransaction,
+  getFinanceSnapshot,
+  shutdownActual,
+} from './actual.js';
 import { writeExports } from './exporter.js';
 import { generateMonthlyReview, generateWeeklyDigest, isGeminiConfigured } from './gemini.js';
+import { loadPendingReceipts, markPendingNotified } from './receipts.js';
 import { isTelegramConfigured, sendAdminAlert, startTelegramBot } from './telegram.js';
 
 const HEALTH_PORT = Number(process.env.HEALTH_PORT || 3001);
@@ -25,6 +31,25 @@ async function runExport(label = 'scheduled') {
     lastExportAt = new Date().toISOString();
     lastExportError = null;
     console.log(`[export] (${label}) Exported ${res.txCount} transactions -> ${res.mdPath}`);
+
+    // Check if any saved pending receipts now match a newly synced bank transaction
+    if (isTelegramConfigured()) {
+      const pending = loadPendingReceipts().filter((r) => !r.notifiedMatch);
+      for (const r of pending) {
+        const matched = await findMatchingTransaction({
+          store: r.store,
+          date: r.date,
+          totalGBP: r.totalGBP,
+        });
+        if (matched) {
+          markPendingNotified(r.id);
+          await sendAdminAlert(
+            `Found a synced bank transaction for your saved *${r.store || 'receipt'}* (£${Number(r.totalGBP).toFixed(2)})!\nSend /receipts to preview and /apply the split.`
+          );
+        }
+      }
+    }
+
     return snap;
   } catch (err) {
     lastExportError = err.message;

@@ -47,10 +47,28 @@ async function ensureActual() {
     initialized = true;
   }
 
-  await api.downloadBudget(
-    syncId,
-    encryptionPassword ? { password: encryptionPassword } : undefined
-  );
+  try {
+    await api.downloadBudget(
+      syncId,
+      encryptionPassword ? { password: encryptionPassword } : undefined
+    );
+  } catch (err) {
+    if (String(err?.code || err?.message || '').includes('out-of-sync')) {
+      console.warn('[actual] Local cache out-of-sync — resetting cache and re-downloading...');
+      try { await api.shutdown(); } catch {}
+      initialized = false;
+      fs.rmSync(CACHE_DIR, { recursive: true, force: true });
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
+      await api.init({ dataDir: CACHE_DIR, serverURL, password });
+      initialized = true;
+      await api.downloadBudget(
+        syncId,
+        encryptionPassword ? { password: encryptionPassword } : undefined
+      );
+    } else {
+      throw err;
+    }
+  }
 }
 
 export async function fetchTrueLayerHealth() {
@@ -316,4 +334,165 @@ export async function shutdownActual() {
     }
     initialized = false;
   }
+}
+
+async function safeSync() {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await api.sync();
+      return;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
+
+export async function getExpenseCategories() {
+  return withLock(async () => {
+    await ensureActual();
+    const [groups, cats] = await Promise.all([api.getCategoryGroups(), api.getCategories()]);
+    const incomeGroupIds = new Set(groups.filter((g) => g.is_income).map((g) => g.id));
+    return cats
+      .filter((c) => !c.is_income && !incomeGroupIds.has(c.group_id) && !c.hidden)
+      .map((c) => ({ id: c.id, name: c.name }));
+  });
+}
+
+/**
+ * Find best matching unsplit Actual Budget transaction for a scanned receipt.
+ * Matches within +/-7 days of receiptDate (or last 14 days if missing) and +/-5p of totalGBP.
+ */
+export async function findMatchingTransaction({ store, date, totalGBP }) {
+  return withLock(async () => {
+    await ensureActual();
+    const targetCents = -Math.round(Math.abs(Number(totalGBP || 0)) * 100);
+    if (!targetCents) return null;
+
+    const now = new Date();
+    const refDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T12:00:00Z`) : now;
+    const start = new Date(refDate);
+    start.setDate(start.getDate() - (date ? 7 : 14));
+    const end = new Date(refDate);
+    end.setDate(end.getDate() + 7);
+    if (end > now) end.setTime(now.getTime() + 86_400_000);
+
+    const [accounts, payees] = await Promise.all([api.getAccounts(), api.getPayees()]);
+    const payeeMap = new Map(payees.map((p) => [p.id, p.name || '']));
+    const storeTokens = String(store || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3);
+
+    const candidates = [];
+    for (const acc of accounts.filter((a) => !a.closed)) {
+      const txs = await api.getTransactions(acc.id, formatDate(start), formatDate(end));
+      for (const tx of txs) {
+        if (tx.tombstone || tx.transfer_id || tx.is_child) continue;
+        const amtDiff = Math.abs(Number(tx.amount || 0) - targetCents);
+        if (amtDiff > 5) continue; // within 5p
+
+        const payeeName = payeeMap.get(tx.payee) || tx.imported_payee || '';
+        const haystack = `${payeeName} ${tx.imported_payee || ''} ${tx.notes || ''}`.toLowerCase();
+        const storeMatch = storeTokens.some((tok) => haystack.includes(tok));
+        const dayDiff = Math.abs(
+          Math.round((Date.parse(`${tx.date}T12:00:00Z`) - refDate.getTime()) / 86_400_000)
+        );
+
+        // Lower score = better match
+        const score = amtDiff * 100 + dayDiff * 5 - (storeMatch ? 50 : 0) + (tx.is_parent ? 40 : 0);
+        candidates.push({
+          score,
+          storeMatch,
+          alreadySplit: Boolean(tx.is_parent),
+          id: tx.id,
+          accountId: acc.id,
+          accountName: acc.name,
+          date: tx.date,
+          amountCents: Number(tx.amount),
+          amountGBP: gbp(tx.amount),
+          payeeId: tx.payee,
+          payeeName: payeeName || 'Unknown',
+          importedPayee: tx.imported_payee || null,
+          importedId: tx.imported_id || null,
+          cleared: Boolean(tx.cleared),
+          notes: tx.notes || '',
+        });
+      }
+    }
+
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0] || null;
+  });
+}
+
+/**
+ * Apply a confirmed receipt split to an existing Actual Budget transaction.
+ * Preserves imported_id, payee, date, cleared status, and exact total amount.
+ */
+export async function applyReceiptSplit(tx, splits, receiptStore) {
+  return withLock(async () => {
+    await ensureActual();
+    const cats = await api.getCategories();
+    const catByLower = new Map(cats.map((c) => [c.name.toLowerCase(), c]));
+    const fallbackCat = catByLower.get('general') || catByLower.get('groceries') || cats[0];
+
+    const resolvedSplits = splits.map((s) => {
+      const match = catByLower.get(String(s.category || '').toLowerCase()) || fallbackCat;
+      return {
+        categoryId: match.id,
+        categoryName: match.name,
+        amountCents: s.amountCents,
+        summary: s.summary || match.name,
+      };
+    });
+
+    const receiptNote = `[Receipt${receiptStore ? `: ${receiptStore}` : ''}]`;
+
+    if (resolvedSplits.length === 1) {
+      const only = resolvedSplits[0];
+      const newNotes = [tx.notes, `${receiptNote} ${only.summary}`].filter(Boolean).join(' | ').slice(0, 250);
+      await api.updateTransaction(tx.id, {
+        category: only.categoryId,
+        notes: newNotes,
+      });
+    } else {
+      // Replace single transaction with a split parent+subtransactions, preserving imported_id
+      await api.deleteTransaction(tx.id);
+      await api.addTransactions(
+        tx.accountId,
+        [
+          {
+            date: tx.date,
+            amount: tx.amountCents,
+            payee: tx.payeeId || undefined,
+            payee_name: tx.payeeId ? undefined : tx.payeeName,
+            imported_payee: tx.importedPayee || undefined,
+            imported_id: tx.importedId || undefined,
+            cleared: tx.cleared,
+            notes: [tx.notes, `${receiptNote} split (${resolvedSplits.length} categories)`]
+              .filter(Boolean)
+              .join(' | ')
+              .slice(0, 250),
+            subtransactions: resolvedSplits.map((s) => ({
+              amount: s.amountCents,
+              category: s.categoryId,
+              notes: s.summary.slice(0, 150),
+            })),
+          },
+        ],
+        { runTransfers: false, learnCategories: false }
+      );
+    }
+
+    await safeSync();
+    // Bust cached snapshot so next /summary reflects the split immediately
+    cachedSnapshot = null;
+    cachedAt = 0;
+
+    return {
+      appliedCount: resolvedSplits.length,
+      splits: resolvedSplits,
+    };
+  });
 }
