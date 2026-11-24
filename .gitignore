@@ -8,6 +8,8 @@
 # Data Directories (too large, handled by Kopia backups)
 **/data/
 **/memos_data/
+**/actual_data/
+**/truelayer_data/
 **/postgres_data/
 **/mysql_data/
 **/mongodb_data/

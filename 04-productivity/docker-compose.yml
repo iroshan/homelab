@@ -1,8 +1,8 @@
 # =============================================================================
 # STACK 4: PRODUCTIVITY
 # =============================================================================
-# Purpose: Notes and quick captures
-# Services: Memos (note-taking), Telegram Bot (integration)
+# Purpose: Notes, quick captures, personal finance, and UK bank sync
+# Services: Memos (note-taking), Telegram Bot (integration), Actual Budget (finance), TrueLayer Sync
 # Deploy: After core infrastructure
 # =============================================================================
 
@@ -63,6 +63,92 @@ services:
     mem_limit: 128m
     mem_reservation: 32m
     cpus: "0.1"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- ACTUAL BUDGET (PERSONAL FINANCE) ---
+  actual-budget:
+    image: docker.io/actualbudget/actual-server:latest
+    container_name: actual-budget
+    restart: unless-stopped
+    user: "1001:1001"
+    environment:
+      - TZ=Europe/London
+      - ACTUAL_PORT=5006
+      - ACTUAL_UPLOAD_FILE_SYNC_SIZE_LIMIT_MB=20
+      - ACTUAL_UPLOAD_SYNC_ENCRYPTED_FILE_SYNC_SIZE_LIMIT_MB=50
+      - ACTUAL_UPLOAD_FILE_SIZE_LIMIT_MB=20
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./actual_data:/data
+    ports:
+      - "127.0.0.1:5006:5006"  # Proxied via NPM — localhost only
+    networks:
+      - productivity_net
+      - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD-SHELL", "node src/scripts/health-check.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- TRUELAYER2ACTUAL (UK OPEN BANKING SYNC) ---
+  truelayer2actual:
+    # Built natively for ARM64 (upstream GHCR image is linux/amd64 only)
+    image: truelayer2actual:local
+    build:
+      context: https://github.com/jasmucrai/truelayer2actual.git#main
+    container_name: truelayer2actual
+    restart: unless-stopped
+    user: "1001:1001"
+    depends_on:
+      actual-budget:
+        condition: service_healthy
+    env_file:
+      - ./truelayer.env
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./truelayer_data:/app/data
+    ports:
+      - "127.0.0.1:5007:3000"  # Proxied via Cloudflare Tunnel — localhost only
+    networks:
+      - productivity_net
+      - proxy_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
