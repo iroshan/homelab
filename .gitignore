@@ -10,6 +10,8 @@
 **/memos_data/
 **/actual_data/
 **/truelayer_data/
+**/finance_bot_data/
+**/finance_exports/
 **/postgres_data/
 **/mysql_data/
 **/mongodb_data/

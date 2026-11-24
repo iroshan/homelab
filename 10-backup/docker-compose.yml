@@ -61,6 +61,9 @@ services:
       # Vaultwarden → Google Drive backup (runs 15m after SQLite backup helper)
       ofelia.job-exec.vw-gdrive-backup.schedule: "0 15 1 * * *"
       ofelia.job-exec.vw-gdrive-backup.command: "sh /app/scripts/backup-vaultwarden-gdrive.sh"
+      # Actual Budget exports → Google Drive sync (for Consumer Gemini / Gems, every 6h)
+      ofelia.job-exec.finance-gdrive-sync.schedule: "0 15 */6 * * *"
+      ofelia.job-exec.finance-gdrive-sync.command: "sh /app/scripts/sync-finance-gdrive.sh"
     logging:
       driver: "json-file"
       options:

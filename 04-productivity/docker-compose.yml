@@ -155,6 +155,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # --- ACTUAL FINANCE BOT (CONSUMER GEMINI EXPORTER + TELEGRAM AI ADVISOR) ---
+  actual-finance-bot:
+    image: actual-finance-bot:local
+    build:
+      context: ./finance-bot
+      dockerfile: Dockerfile
+    container_name: actual-finance-bot
+    restart: unless-stopped
+    user: "1001:1001"
+    depends_on:
+      actual-budget:
+        condition: service_healthy
+    env_file:
+      - ./finance-bot.env
+    environment:
+      - TZ=Europe/London
+    extends:
+      file: ../shared/dns-config.yml
+      service: dns-base
+    volumes:
+      - ./finance_bot_data:/app/data
+      - ./finance_exports:/app/exports
+    # No exposed ports — internal polling + local export only
+    networks:
+      - productivity_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   productivity_net:
     name: productivity_net
