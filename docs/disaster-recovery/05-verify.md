@@ -1,6 +1,6 @@
 # Step 5 — Verify Full Recovery
 
-Run these checks to confirm every service is healthy and your homelab is fully operational.
+Run these checks to confirm every service, tunnel, and backup job is healthy.
 
 ---
 
@@ -10,147 +10,73 @@ Run these checks to confirm every service is healthy and your homelab is fully o
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | sort
 ```
 
-All containers should show `Up X minutes (healthy)` or `Up X minutes`. None should show `Restarting` or `Exited`.
+Expected active containers (all `Up`, none `Restarting` or `Exited`):
 
-Expected containers:
-
-| Container | Status |
+| Stack | Containers |
 |---|---|
-| `vaultwarden` | Up (healthy) |
-| `sqlite-helper` | Up |
-| `nginx_proxy_manager` | Up (healthy) |
-| `portainer` | Up |
-| `f075f3c9fe6d_cloudflared` | Up |
-| `775db7bd1684_homepage` | Up (healthy) |
-| `uptime_kuma` | Up (healthy) |
-| `dozzle` | Up |
-| `memos` | Up |
-| `telegram_memos_bot` | Up (healthy) |
-| `affine` | Up (healthy) |
-| `affine_postgres` | Up (healthy) |
-| `affine_redis` | Up (healthy) |
-| `kopia` | Up |
-| `backup-scheduler` | Up |
-| `homelab-docs` | Up |
-| `workout-tracker` | Up |
+| `01-core-infrastructure` | `cloudflared` |
+| `02-network-access` | `nginx_proxy_manager`, `portainer` |
+| `03-monitoring` | `uptime_kuma`, `dozzle` |
+| `04-productivity` | `memos`, `telegram_memos_bot`, `actual-budget`, `truelayer2actual`, `actual-finance-bot`, `actual-ai` |
+| `05-pkm` | `affine`, `affine_postgres`, `affine_redis` |
+| `06-documentation` | `homelab-docs` |
+| `06-media` | `aiostreams`, `aiometadata`, `aiometadata_redis`, `nzbdavex` |
+| `10-backup` | `kopia`, `backup-scheduler` |
+| `11-security` | `vaultwarden`, `sqlite-helper` |
 
 ---
 
-## 5.2 Service Endpoint Checks
+## 5.2 Endpoint & Tunnel Checks
+
+1. Check [Cloudflare Zero Trust Dashboard](https://one.cloudflare.com) → Networks → Tunnels → **Healthy**.
+2. Test key services:
 
 ```bash
-# Test each public URL
 for url in \
   "https://vault.iroshan.uk/api/version" \
   "https://memos.iroshan.uk" \
-  "https://affine.iroshan.uk" \
+  "https://pkm.iroshan.uk" \
   "https://status.iroshan.uk" \
-  "https://home.iroshan.uk" \
-  "https://docs.iroshan.uk" \
-  "https://workout.iroshan.uk"; do
+  "https://docs.iroshan.uk"; do
     STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null)
-    if [[ "$STATUS" == "200" || "$STATUS" == "302" || "$STATUS" == "301" ]]; then
-        echo "✅ $url → $STATUS"
-    else
-        echo "❌ $url → $STATUS"
-    fi
+    echo "${STATUS}  ${url}"
 done
 ```
 
----
-
-## 5.3 Vaultwarden Login Test
-
-1. Open [vault.iroshan.uk](https://vault.iroshan.uk) in browser
-2. Check it shows version 1.36.0+ (bottom of page)
-3. Log in with your master password via the Bitwarden extension
-4. Confirm your passwords/logins are visible
+3. Check Tailscale-only admin UIs from a Tailscale-connected device:
+   - NPM Admin: `http://<NEW_TAILSCALE_IP>:81`
+   - Portainer: `http://<NEW_TAILSCALE_IP>:9000`
+   - TrueLayer sync: `http://<NEW_TAILSCALE_IP>:5007`
 
 ---
 
-## 5.4 Cloudflare Tunnel Status
-
-1. Go to [Cloudflare Zero Trust Dashboard](https://one.cloudflare.com)
-2. Networks → Tunnels
-3. Your tunnel should show **Healthy** with a green indicator
-
----
-
-## 5.5 Backup System Verification
+## 5.3 Verify Backups Will Keep Running
 
 ```bash
-# Check Ofelia scheduler logs — confirm jobs ran recently
-docker logs backup-scheduler --tail 30
+# 1. Confirm Ofelia registered all 5 jobs
+docker logs backup-scheduler 2>&1 | grep "New job registered" | tail -n 10
 
-# Trigger a manual Kopia snapshot to confirm backup works
-docker exec -e KOPIA_PASSWORD="<YOUR_KOPIA_PASSWORD>" kopia \
-  kopia snapshot create /backup-source --description 'Post-restore verification'
+# 2. Test Affine Postgres dump
+docker exec affine_postgres /bin/sh /usr/local/bin/backup-postgres.sh
 
-# Confirm it succeeded
-docker exec kopia kopia snapshot list | tail -5
+# 3. Test Vaultwarden SQLite backup
+docker exec sqlite-helper /bin/sh /data/backup-vaultwarden.sh
+
+# 4. Confirm hourly git backup timer is active
+systemctl status homelab-git-backup.timer --no-pager
+
+# 5. Test git push works from the new server
+~/homelab/scripts/git-backup.sh
 ```
-
----
-
-## 5.6 Git Automation Check
-
-```bash
-# Check hourly timer is active
-systemctl status homelab-git-backup.timer
-
-# Manually trigger a push to confirm it works
-sudo -u ubuntu /home/ubuntu/homelab/scripts/git-backup.sh
-
-# Verify commit appears on GitHub
-# → github.com/iroshan/homelab → commits
-```
-
----
-
-## 5.7 Vaultwarden Backup Verification
-
-```bash
-# Check last backup ran
-docker logs backup-scheduler 2>&1 | grep -E "vw-backup|vw-gdrive" | tail -10
-
-# Confirm backups exist on Google Drive
-rclone ls gdrive-backups:vaultwarden-backups | sort | tail -5
-```
-
----
-
-## 5.8 Uptime Kuma Monitors
-
-1. Open [status.iroshan.uk](https://status.iroshan.uk)
-2. All monitors should show **Up**
-3. If any are down, investigate the specific service
 
 ---
 
 ## Final Checklist
 
-- [ ] `docker ps` shows all 17 containers healthy
-- [ ] All public URLs return 200/301/302
-- [ ] Can log into Vaultwarden with passwords intact
-- [ ] Cloudflare tunnel shows Healthy
-- [ ] Kopia test snapshot succeeded
-- [ ] Git push timer is active and commits are reaching GitHub
-- [ ] Vaultwarden backup appears on Google Drive
-
----
-
-## �� Recovery Complete
-
-Your homelab is fully operational. 
-
-**Post-recovery actions:**
-
-1. Monitor Uptime Kuma for the next 24 hours to catch any intermittent issues
-2. Check Dozzle logs at [logs.iroshan.uk](https://logs.iroshan.uk) for any error patterns
-3. Verify the next automated Kopia backup runs successfully (2:00 AM)
-4. Update this documentation if you made any changes during recovery
-
----
-
-!!! tip "Prevent Future Pain"
-    Consider setting up **email/Telegram alerts** via Uptime Kuma so you're notified of outages before they become disasters.
+- [ ] All ~21 containers are `Up` (and `healthy` where applicable)
+- [ ] Can log into Vaultwarden, Affine, Memos, and Actual Budget with data intact
+- [ ] Telegram bots (`telegram_memos_bot`, `actual-finance-bot`) respond
+- [ ] Cloudflare Tunnel shows **Healthy**
+- [ ] Ofelia shows all 5 backup jobs registered
+- [ ] `homelab-git-backup.timer` is active and pushing to GitHub
+- [ ] Old server containers remain stopped (keep old server powered down 24–48h before deleting)

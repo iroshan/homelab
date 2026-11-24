@@ -29,8 +29,8 @@
 # **/logs/**
 
 # === Database Transaction Logs ===
-# Keep the data files, exclude transaction logs
-**/pg_wal/**
+# NOTE: Do NOT exclude pg_wal — PostgreSQL requires pg_wal to recover data dirs.
+# Consistent daily pg_dump backups are also stored in 05-pkm/postgres_backups/.
 **/pg_log/**
 **/mysql-logs/**
 **/mysql-bin.*/**

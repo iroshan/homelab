@@ -57,7 +57,7 @@ services:
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.backup-daily.schedule: "0 0 2 * * *"
-      ofelia.job-exec.backup-daily.command: "kopia snapshot create /backup-source --description 'Automated daily backup'"
+      ofelia.job-exec.backup-daily.command: "bash /app/scripts/backup.sh"
       # Vaultwarden → Google Drive backup (runs 15m after SQLite backup helper)
       ofelia.job-exec.vw-gdrive-backup.schedule: "0 15 1 * * *"
       ofelia.job-exec.vw-gdrive-backup.command: "sh /app/scripts/backup-vaultwarden-gdrive.sh"

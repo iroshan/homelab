@@ -1,28 +1,10 @@
 # Step 1 — Provision a New Server
 
-This step gets a fresh Ubuntu server ready to run the homelab.
+Prepare a fresh Ubuntu 24.04 server with Docker, Tailscale, firewall rules, and your homelab repo.
 
 ---
 
-## 1.1 Create the Server
-
-### Oracle Cloud (Recommended — Free Tier)
-
-1. Log into [cloud.oracle.com](https://cloud.oracle.com)
-2. Create Instance → **VM.Standard.A1.Flex** (Ampere ARM)
-   - Shape: 4 OCPU, 24 GB RAM (free tier allowance)
-   - Image: **Ubuntu 24.04 LTS**
-   - Boot volume: 100 GB
-3. Add your SSH public key
-4. Note the public IP address
-
-### Any Other Ubuntu VPS
-
-Any Ubuntu 22.04/24.04 VPS with 4 GB+ RAM will work.
-
----
-
-## 1.2 Initial Server Setup
+## 1.1 Base System & Firewall
 
 SSH into the new server:
 
@@ -30,22 +12,14 @@ SSH into the new server:
 ssh ubuntu@<NEW_SERVER_IP>
 ```
 
-Run initial hardening:
+Update packages, set timezone, install essentials, and enable UFW:
 
 ```bash
-# Update system
 sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl wget git unzip htop rsync ca-certificates gnupg
 
-# Create ubuntu user (if not done by cloud provider)
-# sudo adduser ubuntu && sudo usermod -aG sudo ubuntu
-
-# Install essential tools
-sudo apt install -y curl wget git unzip htop
-
-# Set timezone
 sudo timedatectl set-timezone Europe/London
 
-# Enable UFW firewall (allow SSH + HTTP/S only)
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow ssh
@@ -56,87 +30,74 @@ sudo ufw --force enable
 
 ---
 
-## 1.3 Install Docker
+## 1.2 Install Docker & Tailscale
 
 ```bash
-# Install Docker Engine (official script)
+# Docker Engine + Compose plugin
 curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
 
-# Add ubuntu user to docker group (no sudo needed)
-sudo usermod -aG docker ubuntu
-
-# Log out and back in for group change to take effect
-exit
-# ssh ubuntu@<NEW_SERVER_IP>
-
-# Verify
-docker --version
-docker compose version
+# Tailscale (used for private admin ports: NPM :81, Portainer :9000, TrueLayer :5007)
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
 ```
 
-Expected output: `Docker version 27.x.x` and `Docker Compose version v2.x.x`
+Log out and back in so the `docker` group takes effect, then verify:
+
+```bash
+docker --version
+docker compose version
+tailscale ip -4
+```
 
 ---
 
-## 1.4 Set Up SSH Key for GitHub
+## 1.3 Set Up GitHub SSH Key
 
 ```bash
-# Generate a new ED25519 SSH key
 ssh-keygen -t ed25519 -C "iroshan464@gmail.com" -f ~/.ssh/id_ed25519 -N ""
-
-# Print the public key — you'll add this to GitHub
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Add the public key to GitHub:
+Add the printed public key at [github.com/settings/keys](https://github.com/settings/keys), then test:
 
-1. Go to [github.com/settings/keys](https://github.com/settings/keys)
-2. New SSH Key → paste the output above
-3. Test: `ssh -T git@github.com` → "Hi iroshan!"
+```bash
+ssh -T git@github.com
+# Expected: Hi iroshan! You've successfully authenticated...
+```
 
 ---
 
-## 1.5 Clone the Homelab Repository
+## 1.4 Clone the Repository
+
+*(If you are doing **Option A: Planned Live Migration** with `migrate-to-new-server.sh`, skip cloning here — the script transfers `~/homelab` and gives you the git reconnect commands.)*
+
+For **Option B (Disaster Recovery)**:
 
 ```bash
 cd /home/ubuntu
-
-# Clone infra configs
-git clone git@github.com:iroshan/homelab.git homelab
-
-# Verify structure
-ls ~/homelab/
+git clone --depth 1 git@github.com:iroshan/homelab.git homelab
+cd ~/homelab
 ```
-
-Expected directories: `01-core-infrastructure`, `02-network-access`, `03-monitoring`, etc.
 
 ---
 
-## 1.6 Create Docker Networks
-
-The stacks use named external networks. Create them before deploying:
+## 1.5 Create All Docker Networks
 
 ```bash
-docker network create infrastructure_net
-docker network create proxy_net
-docker network create monitoring_net
-docker network create productivity_net
-docker network create pkm_net
-docker network create docs_net
-docker network create backup_net
-docker network create security_net
+~/homelab/shared/create_networks.sh
 ```
+
+This creates all required external networks (`infrastructure_net`, `proxy_net`, `monitoring_net`, `productivity_net`, `finance_net`, `pkm_net`, `knowledge_net`, `docs_net`, `media_net`, `documents_net`, `utilities_net`, `communication_net`, `backup_net`, `security_net`).
 
 ---
 
 ## Checklist
 
-- [ ] New server is running Ubuntu 22.04/24.04
-- [ ] Docker and Docker Compose installed and working
-- [ ] SSH key added to GitHub; `ssh -T git@github.com` succeeds
-- [ ] `~/homelab` repo cloned and directory structure is correct
-- [ ] All Docker networks created
+- [ ] Ubuntu 24.04 updated, timezone `Europe/London`, UFW enabled
+- [ ] Docker + Compose working without `sudo`
+- [ ] Tailscale connected (`tailscale ip -4` returns a `100.x.y.z` address)
+- [ ] GitHub SSH key added and `ssh -T git@github.com` works
+- [ ] `~/homelab` cloned and networks created
 
----
-
-**Next → [Restore secrets from Kopia](./02-restore-secrets.md)**
+**Next → [Step 2: Restore secrets & data from Kopia](./02-restore-secrets.md)**

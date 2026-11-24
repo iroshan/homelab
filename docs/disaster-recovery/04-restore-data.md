@@ -1,233 +1,113 @@
-# Step 4 — Restore Application Data
+# Step 4 — Manual Data Restore Reference
 
-Restore actual data (databases, files, configuration) from Kopia snapshots.
+If you used `./scripts/restore-from-kopia.sh` (DR) or `./scripts/migrate-to-new-server.sh` (live move), all data is already restored. Use the commands below only if you need to restore a **single service** manually.
 
-!!! info "What needs restoring"
-    The Kopia backup contains a full snapshot of `/home/ubuntu/homelab` including all data directories. The stacks from Step 3 are running but mostly empty — this step fills them with your actual data.
-
----
-
-## 4.0 Connect Kopia Container to Repository
-
-The Kopia container needs to be connected to Google Drive before it can restore:
-
-```bash
-docker exec kopia kopia repository connect rclone \
-  --remote-path=gdrive-backups:homelab-backups \
-  --password=<YOUR_KOPIA_PASSWORD>
-```
-
-Verify:
-
-```bash
-docker exec kopia kopia snapshot list
-```
+!!! warning "Never restore inside the Kopia container into `/backup-source`"
+    Inside the `kopia` container, `/backup-source` is mounted **read-only** (`:ro`). Always run Kopia restores on the **host** using `sudo kopia restore <SNAPSHOT_ROOT_ID> /tmp/kopia-restore` and copy from `/tmp/kopia-restore` while the target container is stopped.
 
 ---
 
-## 4.1 Restore Vaultwarden (Password Manager)
+## 4.1 Restore Vaultwarden (Direct from Google Drive — No Kopia Needed)
 
-!!! danger "Restore Vaultwarden First"
-    Vaultwarden contains your other passwords. Restore it before anything else so you can access those credentials.
-
-Stop the container before restoring:
+Vaultwarden uploads a clean, unencrypted-by-Kopia SQLite backup (`db_YYYYMMDD_010000.sqlite3`) directly to Google Drive every night at `01:15` (the passwords inside the DB are still end-to-end encrypted by your Bitwarden master key):
 
 ```bash
-docker stop vaultwarden
-```
+# List latest backups on Google Drive
+rclone ls gdrive-backups:vaultwarden-backups --include "db_*.sqlite3" | sort -k2 | tail -5
 
-Restore the data directory from Kopia:
-
-```bash
-docker exec kopia kopia snapshot restore latest \
-  --path=/backup-source/11-security/vaultwarden_data \
-  /backup-source/11-security/vaultwarden_data
-```
-
-Or use the Google Drive direct backup (also maintained by the vw-gdrive-backup job):
-
-```bash
-# Alternative: restore from Google Drive rclone backup
-rclone ls gdrive-backups:vaultwarden-backups | sort | tail -5
-
-# Download the latest backup
-LATEST=$(rclone ls gdrive-backups:vaultwarden-backups --include "db_*.sqlite3" | sort | tail -1 | awk '{print $2}')
+# Download the newest one
+LATEST=$(rclone ls gdrive-backups:vaultwarden-backups --include "db_*.sqlite3" | sort -k2 | tail -1 | awk '{print $2}')
+mkdir -p /tmp/vw-restore
 rclone copy "gdrive-backups:vaultwarden-backups/${LATEST}" /tmp/vw-restore/
 
-# Stop container, replace database, restart
+# Swap into place cleanly
 docker stop vaultwarden
-cp /tmp/vw-restore/${LATEST} ~/homelab/11-security/vaultwarden_data/db.sqlite3
-chown 1000:1000 ~/homelab/11-security/vaultwarden_data/db.sqlite3
+sudo cp "/tmp/vw-restore/${LATEST}" ~/homelab/11-security/vaultwarden_data/db.sqlite3
+sudo rm -f ~/homelab/11-security/vaultwarden_data/db.sqlite3-wal ~/homelab/11-security/vaultwarden_data/db.sqlite3-shm
+sudo chown 1000:1000 ~/homelab/11-security/vaultwarden_data/db.sqlite3
 docker start vaultwarden
-```
-
-Verify Vaultwarden is running:
-
-```bash
-sleep 10
-curl -s https://vault.iroshan.uk/api/version
-# Expected: "1.36.0" (or current version)
+rm -rf /tmp/vw-restore
 ```
 
 ---
 
-## 4.2 Restore Affine PKM (Postgres Database)
+## 4.2 Restore Affine PostgreSQL from Daily `pg_dump`
 
-Affine uses PostgreSQL for storage. Restore the database:
+Every night at `01:05`, `affine_postgres` writes a guaranteed-consistent SQL dump to `05-pkm/postgres_backups/latest.sql.gz` (backed up by Kopia).
 
-```bash
-# Stop Affine first
-docker stop affine
-
-# Restore Postgres data directory from Kopia
-docker exec kopia kopia snapshot restore latest \
-  --path=/backup-source/05-pkm/postgres_data \
-  /backup-source/05-pkm/postgres_data
-
-# Restart
-docker start affine
-sleep 30
-docker logs affine 2>&1 | tail -10
-```
-
-Alternative: If data directory restore fails, use pg_dump/pg_restore if you have a SQL dump in your backup.
-
----
-
-## 4.3 Restore Memos (Notes)
-
-Memos stores data in a SQLite file inside its data volume:
+To restore cleanly from a dump (works even across ARM64 ↔ x86_64!):
 
 ```bash
-docker stop memos
+cd ~/homelab/05-pkm
+docker compose down
 
-docker exec kopia kopia snapshot restore latest \
-  --path=/backup-source/04-productivity/memos_data \
-  /backup-source/04-productivity/memos_data
+# Start with a fresh empty Postgres data directory
+sudo rm -rf ./postgres_data && mkdir -p ./postgres_data
+docker compose up -d postgres
 
-docker start memos
+# Wait until healthy
+until [ "$(docker inspect -f '{{.State.Health.Status}}' affine_postgres)" = "healthy" ]; do sleep 2; done
+
+# Import the dump
+set -a && source .env && set +a
+gunzip -c ./postgres_backups/latest.sql.gz | docker exec -i affine_postgres psql -U "${POSTGRES_USER:-affine}" -d "${POSTGRES_DB:-affine}"
+
+# Start Affine + Redis
+docker compose up -d
 ```
 
 ---
 
-## 4.4 Restore Nginx Proxy Manager Configuration
-
-NPM stores all proxy rules, SSL certs, and settings in its data directory:
+## 4.3 Restore Any Single Directory from Kopia
 
 ```bash
-docker stop nginx_proxy_manager
+# 1. List snapshots on the host (as root)
+sudo kopia snapshot list --all | tail -10
 
-docker exec kopia kopia snapshot restore latest \
-  --path=/backup-source/02-network-access/npm_data \
-  /backup-source/02-network-access/npm_data
-
-docker start nginx_proxy_manager
-sleep 20
+# 2. Restore a specific directory using <ROOT_ID>/<relative-path>
+#    Example: restore Actual Budget data
+docker stop actual-budget actual-ai truelayer2actual actual-finance-bot
+sudo kopia restore <ROOT_ID>/04-productivity/actual_data /tmp/restore-actual
+sudo rsync -aHAX --numeric-ids --delete /tmp/restore-actual/ ~/homelab/04-productivity/actual_data/
+sudo rm -rf /tmp/restore-actual
+docker start actual-budget actual-ai truelayer2actual actual-finance-bot
 ```
 
-After restart, all proxy hosts, SSL certificates, and access rules should be restored automatically.
+Key data directory paths inside `/home/ubuntu/homelab`:
+
+| Service | Data Path(s) | Expected UID:GID |
+|---|---|---|
+| Nginx Proxy Manager | `02-network-access/npm/data`, `02-network-access/npm/letsencrypt` | `0:0` |
+| Portainer | `02-network-access/portainer_data` | `1001:1001` (or host user) |
+| Uptime Kuma | `03-monitoring/uptime_kuma_data` | `1001:1001` (or host user) |
+| Memos | `04-productivity/memos_data` | `1000:1000` |
+| Actual Budget + Finance | `04-productivity/actual_data`, `truelayer_data`, `finance_bot_data`, `finance_exports` | `1001:1001` |
+| Affine + Postgres + Redis | `05-pkm/affine_data`, `postgres_data`, `postgres_backups`, `redis_data` | `0:0` / `70:0` / `999:0` |
+| Media stack | `06-media/data/{aiostreams,aiometadata,nzbdavex,redis}` | `1001` / `1000` / `999` |
+| Vaultwarden | `11-security/vaultwarden_data` | `1000:1000` |
 
 ---
 
-## 4.5 Restore Workout Tracker Data
+## 4.4 Reconnect Kopia Container for Future Automated Backups
 
 ```bash
-docker stop workout-tracker
+# 1. Make sure rclone.conf is in place
+ls -la ~/homelab/10-backup/rclone-config/rclone.conf
 
-docker exec kopia kopia snapshot restore latest \
-  --path=/backup-source/workout-tracker \
-  /backup-source/workout-tracker
-
-docker start workout-tracker
-```
-
----
-
-## 4.6 Reconnect Backup System to Google Drive
-
-The Kopia container needs its rclone config to resume automated backups:
-
-```bash
-# Verify rclone config is in place
-ls ~/homelab/10-backup/rclone-config/rclone.conf
-
-# Test rclone from within Kopia container
-docker exec kopia rclone ls gdrive-backups:homelab-backups --max-depth 1
-```
-
-Reconnect Kopia to the repository:
-
-```bash
+# 2. Connect the Kopia container to Google Drive
 docker exec -e KOPIA_PASSWORD="<YOUR_KOPIA_PASSWORD>" kopia \
   kopia repository connect rclone \
   --remote-path=gdrive-backups:homelab-backups
+
+# 3. Verify Ofelia has all 5 scheduled jobs registered
+docker logs backup-scheduler --tail 25
 ```
 
-Run a test backup:
+Expected Ofelia jobs:
+- `vw-backup` (`01:00` daily)
+- `affine-pg-backup` (`01:05` daily)
+- `vw-gdrive-backup` (`01:15` daily)
+- `backup-daily` (`02:00` daily — runs `backup.sh` with Telegram + Ntfy alerts)
+- `finance-gdrive-sync` (every 6h at `:15`)
 
-```bash
-docker exec kopia kopia snapshot create /backup-source --description 'Post-restore test backup'
-```
-
----
-
-## 4.7 Restore Systemd Git Push Timer
-
-The hourly git push timer runs as a systemd unit. Restore it:
-
-```bash
-# Create the systemd service
-sudo tee /etc/systemd/system/homelab-git-backup.service << 'EOF'
-[Unit]
-Description=Homelab Git Backup
-After=network.target
-
-[Service]
-Type=oneshot
-User=ubuntu
-WorkingDirectory=/home/ubuntu/homelab
-ExecStart=/home/ubuntu/homelab/scripts/git-backup.sh
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Create the timer
-sudo tee /etc/systemd/system/homelab-git-backup.timer << 'EOF'
-[Unit]
-Description=Hourly Git Backup Timer
-Requires=homelab-git-backup.service
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-# Enable and start
-sudo systemctl daemon-reload
-sudo systemctl enable homelab-git-backup.timer
-sudo systemctl start homelab-git-backup.timer
-
-# Verify
-systemctl status homelab-git-backup.timer
-```
-
----
-
-## Checklist
-
-- [ ] Vaultwarden restored — can log in at `vault.iroshan.uk`
-- [ ] Affine restored — notes and workspaces visible
-- [ ] Memos restored — notes visible
-- [ ] NPM restored — proxy hosts and SSL certs working
-- [ ] Kopia reconnected to Google Drive and test backup succeeded
-- [ ] Git push timer running (`systemctl status homelab-git-backup.timer`)
-
----
-
-**Next → [Verify everything](./05-verify.md)**
+**Next → [Step 5: Verify Everything](./05-verify.md)**

@@ -83,6 +83,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
+      - ./postgres_backups:/backups
+      - ./backup-postgres.sh:/usr/local/bin/backup-postgres.sh:ro
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-affine}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-affine_password}
@@ -99,6 +101,10 @@ services:
     mem_limit: 256m
     mem_reservation: 64m
     cpus: "0.25"
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.affine-pg-backup.schedule: "0 5 1 * * *"
+      ofelia.job-exec.affine-pg-backup.command: "/bin/sh /usr/local/bin/backup-postgres.sh"
     logging:
       driver: "json-file"
       options:

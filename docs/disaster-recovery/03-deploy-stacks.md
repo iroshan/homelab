@@ -1,204 +1,63 @@
 # Step 3 — Deploy All Stacks
 
-Deploy services in the correct order. Each stack depends on the previous one being up.
-
-!!! warning "Prerequisites"
-    Complete [Step 2 (Restore Secrets)](./02-restore-secrets.md) before this step. Every stack needs its `.env` file.
+*(If you already ran `./scripts/restore-from-kopia.sh` without `--restore-only`, your stacks are already deployed — skip to [Step 5: Verify](./05-verify.md).)*
 
 ---
 
-## Deployment Order
+## 3.1 Ensure Tailscale IP Is Set
 
-```
-1. 01-core-infrastructure  (Cloudflare Tunnel — external access)
-2. 02-network-access       (Nginx Proxy Manager + Portainer)
-3. 03-monitoring           (Homepage, Uptime Kuma, Dozzle)
-4. 04-productivity         (Memos + Telegram Bot)
-5. 05-pkm                  (Affine + Postgres + Redis)
-6. 06-documentation        (MkDocs)
-7. 10-backup               (Kopia + Ofelia scheduler)
-8. 11-security             (Vaultwarden + sqlite-helper)
-9. workout-tracker         (Standalone Flask app)
-```
-
----
-
-## Automated Deployment (Recommended)
+Admin ports (`81`, `9000`, `5007`) bind to `${TAILSCALE_IP}` in `02-network-access/.env` and `04-productivity/.env`. Always run this once on a new server:
 
 ```bash
 cd ~/homelab
-
-# Deploy all stacks in order
-./plan/deploy-all.sh
-```
-
-Watch for any errors before proceeding to the next step.
-
----
-
-## Manual Deployment (Stack by Stack)
-
-If the automated script fails, deploy each stack manually:
-
-### Stack 1: Core Infrastructure
-
-```bash
-cd ~/homelab/01-core-infrastructure
-docker compose up -d
-
-# Verify cloudflared is running
-docker ps | grep cloudflared
-docker logs f075f3c9fe6d_cloudflared 2>&1 | tail -5
-```
-
-Expected: Cloudflare tunnel should connect. Check Cloudflare dashboard → Zero Trust → Tunnels → your tunnel should show "Healthy".
-
-### Stack 2: Network Access
-
-```bash
-cd ~/homelab/02-network-access
-docker compose up -d
-
-# Verify
-docker ps | grep -E "nginx_proxy_manager|portainer"
-```
-
-Wait 30 seconds, then NPM admin panel should be accessible at `http://<SERVER_IP>:81`.
-
-!!! note "NPM Configuration"
-    All proxy host configs are stored in NPM's data directory. If restoring from a fresh install, you'll need to reconfigure proxy hosts manually (or restore the NPM data volume from Kopia — see Step 4).
-
-### Stack 3: Monitoring
-
-```bash
-cd ~/homelab/03-monitoring
-docker compose up -d
-
-docker ps | grep -E "homepage|uptime_kuma|dozzle"
-```
-
-### Stack 4: Productivity
-
-```bash
-cd ~/homelab/04-productivity
-docker compose up -d
-
-docker ps | grep -E "memos|telegram"
-```
-
-### Stack 5: PKM (Affine)
-
-```bash
-cd ~/homelab/05-pkm
-docker compose up -d
-
-# Affine takes 60-90 seconds to initialise
-sleep 90
-docker ps | grep -E "affine|redis|postgres"
-docker logs affine 2>&1 | tail -10
-```
-
-### Stack 6: Documentation
-
-```bash
-cd ~/homelab/06-documentation
-docker compose up -d
-
-docker ps | grep homelab-docs
-```
-
-### Stack 7: Backup
-
-```bash
-cd ~/homelab/10-backup
-
-# Ensure rclone config is in place
-ls rclone-config/rclone.conf || echo "MISSING rclone config!"
-
-docker compose up -d
-
-docker ps | grep -E "kopia|backup-scheduler"
-```
-
-### Stack 8: Security (Vaultwarden)
-
-```bash
-cd ~/homelab/11-security
-docker compose up -d
-
-# Wait for health check
-sleep 20
-docker ps | grep vaultwarden
-curl -s http://localhost/api/version 2>/dev/null || echo "Not yet accessible directly (proxied)"
-```
-
-### Stack 9: Workout Tracker
-
-```bash
-cd ~/homelab/workout-tracker
-docker compose up -d
-
-docker ps | grep workout-tracker
+./scripts/set-tailscale-ip.sh
 ```
 
 ---
 
-## 3.1 Reconfigure Cloudflare Tunnel
-
-If you're provisioning a completely new server, the Cloudflare Tunnel token in your `.env` should already point to the right tunnel. Verify:
-
-1. Go to [Cloudflare Zero Trust Dashboard](https://one.cloudflare.com)
-2. Networks → Tunnels → your tunnel
-3. Status should be **Healthy**
-4. If not, check connector logs: `docker logs f075f3c9fe6d_cloudflared`
-
-If the tunnel token expired or tunnel was deleted, create a new one:
+## 3.2 Deploy Everything in Order (Recommended)
 
 ```bash
-# In Cloudflare dashboard, create new tunnel
-# Copy the tunnel token
-# Update 01-core-infrastructure/.env:
-# TUNNEL_TOKEN=<new_token>
+cd ~/homelab
+./scripts/deploy-all.sh
+```
 
-# Restart cloudflared
-cd ~/homelab/01-core-infrastructure
-docker compose down && docker compose up -d
+This creates all external Docker networks automatically and starts all 9 active stacks in order:
+
+1. `01-core-infrastructure` — `cloudflared`
+2. `02-network-access` — `nginx_proxy_manager`, `portainer`
+3. `03-monitoring` — `uptime_kuma`, `dozzle`
+4. `04-productivity` — `memos`, `telegram_memos_bot`, `actual-budget`, `truelayer2actual`, `actual-finance-bot`, `actual-ai` *(auto-builds local images on first deploy)*
+5. `05-pkm` — `affine_postgres`, `affine_redis`, `affine_migration`, `affine`
+6. `06-documentation` — `homelab-docs`
+7. `06-media` — `aiostreams`, `aiometadata`, `aiometadata_redis`, `nzbdavex`
+8. `10-backup` — `kopia`, `backup-scheduler`
+9. `11-security` — `vaultwarden`, `sqlite-helper` *(auto-builds `sqlite-helper`)*
+
+To deploy or rebuild a single stack:
+
+```bash
+./scripts/deploy-all.sh --stack 04-productivity --build
 ```
 
 ---
 
-## 3.2 Reconfigure Nginx Proxy Manager
+## 3.3 Notes on Specific Stacks
 
-NPM hosts all your reverse proxy rules. After restoring NPM data (Step 4), the proxy hosts should be restored automatically.
-
-If starting from scratch, you'll need to reconfigure each proxy host:
-
-| Domain | Forwarding to | Port |
-|---|---|---|
-| `vault.iroshan.uk` | `vaultwarden` | `80` |
-| `memos.iroshan.uk` | `memos` | `5230` |
-| `affine.iroshan.uk` | `affine` | `3010` |
-| `docs.iroshan.uk` | `homelab-docs` | `8000` |
-| `status.iroshan.uk` | `uptime_kuma` | `3001` |
-| `logs.iroshan.uk` | `dozzle` | `8080` |
-| `backup.iroshan.uk` | `kopia` | `51515` |
-| `home.iroshan.uk` | `775db7bd1684_homepage` | `3000` |
-| `workout.iroshan.uk` | `workout-tracker` | `5000` |
+- **`01-core-infrastructure` (`cloudflared`)**: Uses `TUNNEL_TOKEN` from `.env`. Make sure the old server's `cloudflared` is stopped so traffic routes cleanly to the new server. Check status at [one.cloudflare.com](https://one.cloudflare.com) → Networks → Tunnels.
+- **`04-productivity` (`truelayer2actual`)**: Builds from a pinned GitHub commit automatically on first `docker compose up -d` (takes ~1–2 minutes).
+- **Container UIDs**:
+  - `actual-budget`, `truelayer2actual`, `actual-finance-bot` run as UID `1001:1001`.
+  - `memos`, `vaultwarden`, `homelab-docs` run as UID `1000:1000`.
+  - `affine_postgres` runs as UID `70`.
+  - Both `migrate-to-new-server.sh` and `restore-from-kopia.sh` preserve exact numeric UIDs automatically. If you ever manually copy files and see `Permission denied` in container logs, fix ownership with `sudo chown -R <UID>:<GID> <data_dir>`.
 
 ---
 
-## Checklist
-
-- [ ] All 9 stacks deployed and showing healthy in `docker ps`
-- [ ] Cloudflare tunnel status is **Healthy**
-- [ ] NPM admin panel accessible at `http://<IP>:81`
-- [ ] No containers showing `Exited` or `Restarting`
+## 3.4 Install the Hourly Git Config Backup Timer
 
 ```bash
-# Quick status check
-docker ps --format "table {{.Names}}\t{{.Status}}" | sort
+sudo ~/homelab/scripts/install-git-timer.sh
 ```
 
----
-
-**Next → [Restore application data](./04-restore-data.md)**
+**Next → [Step 4: Manual Data Restore Reference](./04-restore-data.md)** or **[Step 5: Verify](./05-verify.md)**

@@ -1,20 +1,38 @@
-#!/bin/bash
-# Create shared networks manually since docker compose up requires services
+#!/usr/bin/env bash
+# =============================================================================
+# Create all external Docker networks used by the homelab stacks
+# =============================================================================
+set -euo pipefail
 
-# Core Infrastructure (Internal, Static IP)
-docker network create --driver bridge --internal --subnet=172.18.0.0/24 infrastructure_net || true
+ensure_net() {
+    local name="$1"
+    shift
+    if docker network inspect "$name" >/dev/null 2>&1; then
+        echo "✓ Network already exists: $name"
+    else
+        docker network create "$@" "$name" >/dev/null
+        echo "✅ Created network: $name"
+    fi
+}
 
-# Public facing
-docker network create --driver bridge proxy_net || true
+# Core Infrastructure (Internal, Static Subnet)
+ensure_net infrastructure_net --driver bridge --internal --subnet=172.18.0.0/24
 
-# Application stacks
-docker network create --driver bridge monitoring_net || true
-docker network create --driver bridge productivity_net || true
-docker network create --driver bridge knowledge_net || true
-docker network create --driver bridge media_net || true
-docker network create --driver bridge documents_net || true
-docker network create --driver bridge utilities_net || true
-docker network create --driver bridge communication_net || true
-docker network create --driver bridge backup_net || true
+# Public / reverse proxy
+ensure_net proxy_net --driver bridge
 
-echo "Networks created successfully."
+# Application stack networks
+ensure_net monitoring_net --driver bridge
+ensure_net productivity_net --driver bridge
+ensure_net finance_net --driver bridge
+ensure_net pkm_net --driver bridge
+ensure_net knowledge_net --driver bridge
+ensure_net docs_net --driver bridge
+ensure_net media_net --driver bridge
+ensure_net documents_net --driver bridge
+ensure_net utilities_net --driver bridge
+ensure_net communication_net --driver bridge
+ensure_net backup_net --driver bridge
+ensure_net security_net --driver bridge
+
+echo "All homelab Docker networks are ready."

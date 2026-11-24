@@ -131,8 +131,8 @@ services:
     volumes:
       - ./truelayer_data:/app/data
     ports:
-      - "127.0.0.1:5007:3000"      # Localhost healthcheck
-      - "100.72.31.46:5007:3000"   # Tailscale-only direct access
+      - "127.0.0.1:5007:3000"                     # Localhost healthcheck
+      - "${TAILSCALE_IP:-127.0.0.2}:5007:3000"    # Tailscale-only direct access
     networks:
       - finance_net
     security_opt:

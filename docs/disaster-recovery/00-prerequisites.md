@@ -1,77 +1,51 @@
 # Step 0 — Prerequisites
 
-Gather everything below before starting recovery. Most of these are account credentials you should have stored outside Vaultwarden (since Vaultwarden is what we're recovering).
-
-!!! warning "Before you start"
-    Keep a printed or offline copy of your critical credentials. You cannot access Vaultwarden if it's not running yet.
+Gather everything below before starting recovery. Keep a copy **outside Vaultwarden** (printed sheet, encrypted USB, or a secondary password manager) since Vaultwarden itself is what you're recovering.
 
 ---
 
 ## Accounts & Access
 
-| Account | What you need | Where to get it |
+| Account | What you need | Used for |
 |---|---|---|
-| **GitHub** | Username + password or SSH key | github.com login |
-| **Google Drive** | Google account login | google.com login |
-| **Cloudflare** | Account login + Zone API token | cloudflare.com login |
-| **Oracle Cloud / VPS** | Login to create/access a new server | your provider's console |
+| **GitHub** | Login + ability to add an SSH key | Cloning `iroshan/homelab` |
+| **Google Account** | Login (for rclone OAuth) | Downloading Kopia + Vaultwarden backups from Google Drive |
+| **Cloudflare** | Account login | Checking Tunnel health (token is inside restored `01-core-infrastructure/.env`) |
+| **Tailscale** | Account login | Joining the new server to your tailnet (`TAILSCALE_IP` for NPM/Portainer/TrueLayer admin UIs) |
+| **VPS Provider** | Oracle Cloud / Hetzner / etc. | Creating the new Ubuntu 24.04 server |
 
 ---
 
-## Critical Credentials to Have Offline
+## Critical Credentials to Keep Offline
 
-Store these somewhere safe **outside** your server (printed, USB drive, or trusted password manager not on this server):
-
-| Item | Notes |
+| Item | Why it's critical |
 |---|---|
-| `KOPIA_PASSWORD` | Encrypts Kopia backups — **without this, data is unrecoverable** |
-| Cloudflare Tunnel token | Used in `01-core-infrastructure/.env` |
-| Google OAuth credentials | Used to re-authorise rclone |
-| GitHub SSH private key (or PAT) | To clone the homelab repo |
+| **`KOPIA_PASSWORD`** | Decrypts the Google Drive backup (`gdrive-backups:homelab-backups`). **Without this, Kopia backups cannot be decrypted.** |
+| **Vaultwarden Master Password** | Unlocks your vault once restored. |
+| **Google / GitHub / Cloudflare / Tailscale logins** | Needed to bootstrap the new server before Vaultwarden is online. |
 
-!!! tip "Kopia Password"
-    The Kopia password (`KOPIA_PASSWORD`) is the most critical single credential. Without it, all backup data is permanently unrecoverable — it's encrypted AES-256.
+!!! tip "Good to know"
+    Every `.env` file (Cloudflare tunnel token, Postgres password, Telegram bot tokens, Gemini/TrueLayer/TMDB API keys, Vaultwarden admin token) is stored **inside** the Kopia backup. As long as you have `KOPIA_PASSWORD` + Google Drive + GitHub, you can recover 100% of them.
 
 ---
 
 ## New Server Specification
 
-Minimum recommended spec for full homelab restore:
-
 | Resource | Minimum | Recommended |
 |---|---|---|
-| CPU | 2 vCPU | 4 vCPU |
-| RAM | 4 GB | 8 GB |
-| Disk | 50 GB | 100 GB SSD |
-| OS | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
-| Network | 1 Gbps port | 1 Gbps port |
-
-Oracle Cloud Free Tier (Ampere A1) provides 4 OCPU / 24 GB RAM — plenty of headroom.
-
----
-
-## Tools to Install on Your Recovery Machine
-
-(Laptop/desktop you're working from, not the server)
-
-```bash
-# SSH client (usually pre-installed on Mac/Linux)
-ssh --version
-
-# Optional: VS Code or any text editor for reviewing configs
-```
+| CPU | 2 vCPU | 4 vCPU (ARM64 or x86_64 — all stacks support both) |
+| RAM | 4 GB | 8 GB+ |
+| Disk | 40 GB | 100 GB SSD (current homelab data is ~770 MB) |
+| OS | Ubuntu 22.04 LTS | **Ubuntu 24.04 LTS** |
 
 ---
 
 ## Checklist
 
-- [ ] I can log into GitHub and access `iroshan/homelab`
-- [ ] I can log into Google Drive and see the `homelab-backups` folder
-- [ ] I have the **Kopia password** written down / accessible offline
-- [ ] I have access to Cloudflare account and can view tunnel tokens
-- [ ] I have a new server provisioned (or VPS account to create one)
-- [ ] I know the new server's IP address and have SSH access
+- [ ] Can log into GitHub (`iroshan/homelab`)
+- [ ] Can log into Google Drive and see `homelab-backups` and `vaultwarden-backups`
+- [ ] Have `KOPIA_PASSWORD` accessible offline
+- [ ] Can log into Tailscale and Cloudflare
+- [ ] New Ubuntu 24.04 server created and reachable over SSH
 
----
-
-**Ready? → [Provision the server](./01-provision-server.md)**
+**Next → [Step 1: Provision the server](./01-provision-server.md)**
