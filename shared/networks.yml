@@ -46,3 +46,8 @@ networks:
   backup_net:
     name: backup_net
     driver: bridge
+
+  # Isolated personal finance stack (Actual Budget + sync + bots + cloudflared only)
+  finance_net:
+    name: finance_net
+    driver: bridge

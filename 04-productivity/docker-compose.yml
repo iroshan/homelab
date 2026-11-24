@@ -71,7 +71,7 @@ services:
 
   # --- ACTUAL BUDGET (PERSONAL FINANCE) ---
   actual-budget:
-    image: docker.io/actualbudget/actual-server:latest
+    image: docker.io/actualbudget/actual-server:26.11.0
     container_name: actual-budget
     restart: unless-stopped
     user: "1001:1001"
@@ -87,10 +87,9 @@ services:
     volumes:
       - ./actual_data:/data
     ports:
-      - "127.0.0.1:5006:5006"  # Proxied via NPM — localhost only
+      - "127.0.0.1:5006:5006"  # Localhost (MCP / tailscale serve); HTTPS via Cloudflare Tunnel
     networks:
-      - productivity_net
-      - proxy_net
+      - finance_net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -112,10 +111,10 @@ services:
 
   # --- TRUELAYER2ACTUAL (UK OPEN BANKING SYNC) ---
   truelayer2actual:
-    # Built natively for ARM64 (upstream GHCR image is linux/amd64 only)
+    # Built natively for ARM64 from pinned commit (upstream GHCR image is linux/amd64 only)
     image: truelayer2actual:local
     build:
-      context: https://github.com/jasmucrai/truelayer2actual.git#main
+      context: https://github.com/jasmucrai/truelayer2actual.git#af2363c14789cde9afb09873e6fd5f85ba89a536
     container_name: truelayer2actual
     restart: unless-stopped
     user: "1001:1001"
@@ -132,10 +131,10 @@ services:
     volumes:
       - ./truelayer_data:/app/data
     ports:
-      - "127.0.0.1:5007:3000"  # Proxied via Cloudflare Tunnel — localhost only
+      - "127.0.0.1:5007:3000"      # Localhost healthcheck
+      - "100.72.31.46:5007:3000"   # Tailscale-only direct access
     networks:
-      - productivity_net
-      - proxy_net
+      - finance_net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -179,7 +178,7 @@ services:
       - ./finance_exports:/app/exports
     # No exposed ports — internal polling + local export only
     networks:
-      - productivity_net
+      - finance_net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -195,7 +194,7 @@ services:
 
   # --- ACTUAL-AI (SCHEDULED AUTO-CATEGORIZER VIA GEMINI) ---
   actual-ai:
-    image: docker.io/sakowicz/actual-ai:latest
+    image: docker.io/sakowicz/actual-ai:3.3.3
     container_name: actual-ai
     restart: unless-stopped
     depends_on:
@@ -208,11 +207,13 @@ services:
     extends:
       file: ../shared/dns-config.yml
       service: dns-base
-    # No exposed ports — internal scheduled worker on productivity_net
+    # No exposed ports — internal scheduled worker on finance_net
     networks:
-      - productivity_net
+      - finance_net
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 512m
     mem_reservation: 128m
     cpus: "0.5"
@@ -229,4 +230,8 @@ networks:
   
   proxy_net:
     name: proxy_net
+    external: true
+
+  finance_net:
+    name: finance_net
     external: true

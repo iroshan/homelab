@@ -128,11 +128,11 @@ export function writeExports(snap) {
   const mdPath = path.join(EXPORTS_DIR, 'finance-summary.md');
   const csvPath = path.join(EXPORTS_DIR, 'transactions-90d.csv');
 
-  // Atomic write via temp files
+  // Atomic write via temp files (owner-only 0600 permissions)
   const mdTmp = `${mdPath}.tmp`;
   const csvTmp = `${csvPath}.tmp`;
-  fs.writeFileSync(mdTmp, buildMarkdownSummary(snap), 'utf8');
-  fs.writeFileSync(csvTmp, buildTransactionsCsv(snap), 'utf8');
+  fs.writeFileSync(mdTmp, buildMarkdownSummary(snap), { encoding: 'utf8', mode: 0o600 });
+  fs.writeFileSync(csvTmp, buildTransactionsCsv(snap), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(mdTmp, mdPath);
   fs.renameSync(csvTmp, csvPath);
 

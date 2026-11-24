@@ -14,6 +14,7 @@ services:
     networks:
       - infrastructure_net
       - proxy_net
+      - finance_net
     security_opt:
       - no-new-privileges:true
     mem_limit: 128m
@@ -32,4 +33,8 @@ networks:
   
   proxy_net:
     name: proxy_net
+    external: true
+
+  finance_net:
+    name: finance_net
     external: true
