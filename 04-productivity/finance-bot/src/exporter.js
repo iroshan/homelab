@@ -59,6 +59,18 @@ export function buildMarkdownSummary(snap) {
   }
   lines.push('');
 
+  if (snap.budgetSummary && snap.budgetSummary.categories && snap.budgetSummary.categories.length > 0) {
+    lines.push(`## Monthly Budget vs Actual (${snap.budgetSummary.month})`);
+    lines.push(`- **Total Budgeted:** ${snap.budgetSummary.totalBudgetedGBP} | **Total Spent:** ${snap.budgetSummary.totalSpentGBP}`);
+    lines.push('');
+    lines.push('| Group | Category | Budgeted | Spent | Remaining |');
+    lines.push('| :--- | :--- | ---: | ---: | ---: |');
+    for (const c of snap.budgetSummary.categories) {
+      lines.push(`| ${c.group} | ${c.name} | ${c.budgetedGBP} | ${c.spentGBP} | ${c.remainingGBP} |`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Top Merchants (Last 30 Days)');
   if (snap.last30d.topMerchants.length === 0) {
     lines.push('_No spending transactions in the last 30 days._');

@@ -302,6 +302,7 @@ async function handleMessage(msg) {
           '',
           '*Commands:*',
           '• /summary — Instant balances & 7d/30d spending',
+          '• /budget — Live monthly budget vs spent per category',
           '• /weekly — AI weekly review & tips',
           '• /monthly — AI monthly review & subscription audit',
           '• /receipts — Match saved receipts waiting for bank sync',
@@ -408,6 +409,27 @@ async function handleMessage(msg) {
       await sendTyping(chatId);
       const snap = await getFinanceSnapshot({ forceRefresh: true });
       await sendTelegram(chatId, formatQuickSummary(snap));
+      return;
+    }
+
+    if (cmd === '/budget') {
+      await sendTyping(chatId);
+      const snap = await getFinanceSnapshot({ forceRefresh: true });
+      const bs = snap.budgetSummary;
+      if (!bs || !bs.categories?.length) {
+        await sendTelegram(chatId, 'No monthly budget targets set yet.');
+        return;
+      }
+      const lines = [
+        `*Monthly Budget (${bs.month})*`,
+        `Total budgeted: ${bs.totalBudgetedGBP} | Spent: ${bs.totalSpentGBP}`,
+        '',
+      ];
+      for (const c of bs.categories) {
+        const flag = c.balanceCents < 0 ? ' ⚠️' : '';
+        lines.push(`• ${c.name}: ${c.spentGBP} / ${c.budgetedGBP} (left: ${c.remainingGBP})${flag}`);
+      }
+      await sendTelegram(chatId, lines.join('\n'));
       return;
     }
 

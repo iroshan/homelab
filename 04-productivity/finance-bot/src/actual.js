@@ -175,6 +175,7 @@ export async function getFinanceSnapshot({ forceRefresh = false } = {}) {
         allTransactions.push({
           date: tx.date,
           account: acc.name,
+          offbudget: Boolean(acc.offbudget),
           payee: String(payeeName).replace(/\s+/g, ' ').trim(),
           category: catInfo ? catInfo.name : isTransfer ? 'Transfer' : 'Uncategorized',
           categoryGroup: catInfo ? catInfo.group : isTransfer ? 'Transfer' : 'Uncategorized',
@@ -190,24 +191,48 @@ export async function getFinanceSnapshot({ forceRefresh = false } = {}) {
 
     allTransactions.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-    // Fetch current month budget summary if available
+    // Fetch current month budget summary + per-category budgeted/spent/balance
     let budgetSummary = null;
     try {
       const bm = await api.getBudgetMonth(currentMonth);
       if (bm) {
+        const categories = [];
+        for (const grp of bm.categoryGroups || []) {
+          if (grp.is_income) continue;
+          for (const c of grp.categories || []) {
+            if (c.hidden) continue;
+            const budgetedCents = Number(c.budgeted || 0);
+            const spentCents = Number(c.spent || 0);
+            const balanceCents = Number(c.balance || 0);
+            if (budgetedCents === 0 && spentCents === 0) continue;
+            categories.push({
+              group: grp.name,
+              name: c.name,
+              budgetedCents,
+              spentCents,
+              balanceCents,
+              budgetedGBP: gbp(budgetedCents),
+              spentGBP: gbp(Math.abs(spentCents)),
+              remainingGBP: gbp(balanceCents),
+            });
+          }
+        }
         budgetSummary = {
           month: currentMonth,
           totalIncomeCents: Number(bm.totalIncome || 0),
           totalBudgetedCents: Number(bm.totalBudgeted || 0),
           totalSpentCents: Number(bm.totalSpent || 0),
           toBudgetCents: Number(bm.toBudget || 0),
+          totalBudgetedGBP: gbp(Math.abs(bm.totalBudgeted || 0)),
+          totalSpentGBP: gbp(Math.abs(bm.totalSpent || 0)),
+          categories,
         };
       }
     } catch {
       budgetSummary = null;
     }
 
-    // Aggregate helper (excludes internal transfers)
+    // Aggregate helper (excludes internal transfers and Starting Balances)
     function summarizePeriod(txList) {
       let spentCents = 0;
       let incomeCents = 0;
@@ -216,8 +241,11 @@ export async function getFinanceSnapshot({ forceRefresh = false } = {}) {
       const byCategory = new Map();
       const byMerchant = new Map();
 
-      for (const tx of txList) {
-        if (tx.isTransfer) continue;
+      const nonMeta = txList.filter(
+        (tx) => !tx.offbudget && !tx.isTransfer && tx.category !== 'Starting Balances'
+      );
+
+      for (const tx of nonMeta) {
         if (tx.amountCents < 0) {
           const abs = Math.abs(tx.amountCents);
           spentCents += abs;
@@ -243,7 +271,7 @@ export async function getFinanceSnapshot({ forceRefresh = false } = {}) {
         .map(([name, cents]) => ({ name, cents, gbp: gbp(cents) }));
 
       return {
-        txCount: txList.filter((t) => !t.isTransfer).length,
+        txCount: nonMeta.length,
         spentCents,
         spentGBP: gbp(spentCents),
         incomeCents,
@@ -265,7 +293,7 @@ export async function getFinanceSnapshot({ forceRefresh = false } = {}) {
     // Detect recurring/subscription candidates across 90 days
     const merchantHistory = new Map();
     for (const tx of allTransactions) {
-      if (tx.isTransfer || tx.amountCents >= 0) continue;
+      if (tx.offbudget || tx.isTransfer || tx.category === 'Starting Balances' || tx.amountCents >= 0) continue;
       const key = tx.payee.toLowerCase();
       if (!merchantHistory.has(key)) {
         merchantHistory.set(key, {
