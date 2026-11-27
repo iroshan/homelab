@@ -431,6 +431,8 @@ export async function findMatchingTransaction({ store, date, totalGBP }) {
         const score = amtDiff * 100 + dayDiff * 5 - (storeMatch ? 50 : 0) + (tx.is_parent ? 40 : 0);
         candidates.push({
           score,
+          amtDiff,
+          dayDiff,
           storeMatch,
           alreadySplit: Boolean(tx.is_parent),
           id: tx.id,
@@ -443,6 +445,7 @@ export async function findMatchingTransaction({ store, date, totalGBP }) {
           payeeName: payeeName || 'Unknown',
           importedPayee: tx.imported_payee || null,
           importedId: tx.imported_id || null,
+          categoryId: tx.category || null,
           cleared: Boolean(tx.cleared),
           notes: tx.notes || '',
         });
@@ -476,6 +479,9 @@ export async function applyReceiptSplit(tx, splits, receiptStore) {
     });
 
     const receiptNote = `[Receipt${receiptStore ? `: ${receiptStore}` : ''}]`;
+    const splitMarker = `r_${Date.now().toString(36)}`;
+    let mode = 'single';
+    let targetTxId = tx.id;
 
     if (resolvedSplits.length === 1) {
       const only = resolvedSplits[0];
@@ -485,8 +491,13 @@ export async function applyReceiptSplit(tx, splits, receiptStore) {
         notes: newNotes,
       });
     } else {
+      mode = 'split';
       // Replace single transaction with a split parent+subtransactions, preserving imported_id
       await api.deleteTransaction(tx.id);
+      const parentNotes = [tx.notes, `${receiptNote} split (${resolvedSplits.length} categories) [${splitMarker}]`]
+        .filter(Boolean)
+        .join(' | ')
+        .slice(0, 250);
       await api.addTransactions(
         tx.accountId,
         [
@@ -498,10 +509,7 @@ export async function applyReceiptSplit(tx, splits, receiptStore) {
             imported_payee: tx.importedPayee || undefined,
             imported_id: tx.importedId || undefined,
             cleared: tx.cleared,
-            notes: [tx.notes, `${receiptNote} split (${resolvedSplits.length} categories)`]
-              .filter(Boolean)
-              .join(' | ')
-              .slice(0, 250),
+            notes: parentNotes,
             subtransactions: resolvedSplits.map((s) => ({
               amount: s.amountCents,
               category: s.categoryId,
@@ -511,6 +519,11 @@ export async function applyReceiptSplit(tx, splits, receiptStore) {
         ],
         { runTransfers: false, learnCategories: false }
       );
+      const afterTxs = await api.getTransactions(tx.accountId, tx.date, tx.date);
+      const created = afterTxs.find(
+        (t) => !t.tombstone && t.is_parent && (t.notes || '').includes(splitMarker)
+      );
+      targetTxId = created ? created.id : null;
     }
 
     await safeSync();
@@ -519,8 +532,70 @@ export async function applyReceiptSplit(tx, splits, receiptStore) {
     cachedAt = 0;
 
     return {
+      mode,
+      targetTxId,
       appliedCount: resolvedSplits.length,
       splits: resolvedSplits,
+      undoPayload: {
+        mode,
+        targetTxId,
+        originalTx: {
+          id: tx.id,
+          accountId: tx.accountId,
+          accountName: tx.accountName,
+          date: tx.date,
+          amountCents: tx.amountCents,
+          payeeId: tx.payeeId || null,
+          payeeName: tx.payeeName,
+          importedPayee: tx.importedPayee || null,
+          importedId: tx.importedId || null,
+          categoryId: tx.categoryId || null,
+          cleared: Boolean(tx.cleared),
+          notes: tx.notes || '',
+        },
+      },
     };
+  });
+}
+
+/**
+ * Revert a receipt split back to the original transaction state.
+ */
+export async function undoReceiptSplit(undoEntry) {
+  return withLock(async () => {
+    await ensureActual();
+    const orig = undoEntry.originalTx;
+
+    if (undoEntry.mode === 'single') {
+      await api.updateTransaction(undoEntry.targetTxId || orig.id, {
+        category: orig.categoryId || null,
+        notes: orig.notes || '',
+      });
+    } else {
+      if (undoEntry.targetTxId) {
+        await api.deleteTransaction(undoEntry.targetTxId);
+      }
+      await api.addTransactions(
+        orig.accountId,
+        [
+          {
+            date: orig.date,
+            amount: orig.amountCents,
+            payee: orig.payeeId || undefined,
+            payee_name: orig.payeeId ? undefined : orig.payeeName,
+            imported_payee: orig.importedPayee || undefined,
+            imported_id: orig.importedId || undefined,
+            category: orig.categoryId || undefined,
+            cleared: orig.cleared,
+            notes: orig.notes || undefined,
+          },
+        ],
+        { runTransfers: false, learnCategories: false }
+      );
+    }
+
+    await safeSync();
+    cachedSnapshot = null;
+    cachedAt = 0;
   });
 }

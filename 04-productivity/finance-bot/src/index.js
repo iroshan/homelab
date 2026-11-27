@@ -2,14 +2,18 @@ import 'dotenv/config';
 import http from 'http';
 import {
   fetchTrueLayerHealth,
-  findMatchingTransaction,
   getFinanceSnapshot,
   shutdownActual,
 } from './actual.js';
 import { writeExports } from './exporter.js';
 import { generateMonthlyReview, generateWeeklyDigest, isGeminiConfigured } from './gemini.js';
 import { loadPendingReceipts, markPendingNotified } from './receipts.js';
-import { isTelegramConfigured, sendAdminAlert, startTelegramBot } from './telegram.js';
+import {
+  isTelegramConfigured,
+  processPendingReceiptMatch,
+  sendAdminAlert,
+  startTelegramBot,
+} from './telegram.js';
 
 const HEALTH_PORT = Number(process.env.HEALTH_PORT || 3001);
 const EXPORT_INTERVAL_HOURS = Number(process.env.EXPORT_INTERVAL_HOURS || 6);
@@ -36,16 +40,12 @@ async function runExport(label = 'scheduled') {
     if (isTelegramConfigured()) {
       const pending = loadPendingReceipts().filter((r) => !r.notifiedMatch);
       for (const r of pending) {
-        const matched = await findMatchingTransaction({
-          store: r.store,
-          date: r.date,
-          totalGBP: r.totalGBP,
-        });
-        if (matched) {
+        const outcome = await processPendingReceiptMatch(r);
+        if (outcome.status === 'auto_applied') {
+          await sendAdminAlert(outcome.text, { replyMarkup: outcome.replyMarkup });
+        } else if (outcome.status === 'needs_confirm') {
           markPendingNotified(r.id);
-          await sendAdminAlert(
-            `Found a synced bank transaction for your saved *${r.store || 'receipt'}* (£${Number(r.totalGBP).toFixed(2)})!\nSend /receipts to preview and /apply the split.`
-          );
+          await sendAdminAlert(outcome.text, { replyMarkup: outcome.replyMarkup });
         }
       }
     }

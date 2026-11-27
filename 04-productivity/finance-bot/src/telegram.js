@@ -4,6 +4,7 @@ import {
   findMatchingTransaction,
   getExpenseCategories,
   getFinanceSnapshot,
+  undoReceiptSplit,
 } from './actual.js';
 import { writeExports } from './exporter.js';
 import {
@@ -17,14 +18,30 @@ import {
 import {
   addPendingReceipt,
   clearPendingReceipts,
+  getUndoEntry,
+  isHighConfidenceMatch,
   loadPendingReceipts,
   normalizeSplitsToTarget,
   removePendingReceipt,
+  removeUndoEntry,
+  saveUndoEntry,
 } from './receipts.js';
 
 const MAX_MSG_LEN = 3900;
-// Active awaiting-confirmation receipt split per chat
-const activeDrafts = new Map();
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+// Drafts awaiting confirmation, keyed by draftId
+const draftsById = new Map();
+
+function storeDraft(draft) {
+  const now = Date.now();
+  for (const [k, v] of draftsById) {
+    if (now - v.createdAt > DRAFT_TTL_MS) draftsById.delete(k);
+  }
+  const id = `drft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+  const record = { id, createdAt: now, ...draft };
+  draftsById.set(id, record);
+  return record;
+}
 
 export function isTelegramConfigured() {
   return Boolean(
@@ -53,47 +70,65 @@ function splitMessage(text) {
   return chunks;
 }
 
-export async function sendTelegram(chatId, text) {
-  if (!process.env.FINANCE_TELEGRAM_BOT_TOKEN?.trim()) return;
-  for (const chunk of splitMessage(text)) {
-    // Try Markdown first, fall back to plain text if Markdown syntax fails
-    const res = await fetch(apiUrl('sendMessage'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: chunk,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true,
-      }),
-    });
-    if (!res.ok) {
-      await fetch(apiUrl('sendMessage'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-          disable_web_page_preview: true,
-        }),
-      });
-    }
-  }
+async function tgPost(method, payload) {
+  const res = await fetch(apiUrl(method), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json().catch(() => ({ ok: res.ok }));
 }
 
-export async function sendAdminAlert(text) {
+export async function sendTelegram(chatId, text, options = {}) {
+  if (!process.env.FINANCE_TELEGRAM_BOT_TOKEN?.trim()) return null;
+  const chunks = splitMessage(text);
+  let lastMsg = null;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const isLast = i === chunks.length - 1;
+    const basePayload = {
+      chat_id: chatId,
+      text: chunks[i],
+      disable_web_page_preview: true,
+      ...(i === 0 && options.replyToMessageId
+        ? { reply_to_message_id: options.replyToMessageId }
+        : {}),
+      ...(isLast && options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+    };
+
+    let data = await tgPost('sendMessage', { ...basePayload, parse_mode: 'Markdown' });
+    if (!data.ok) {
+      data = await tgPost('sendMessage', basePayload);
+    }
+    if (data.ok) lastMsg = data.result;
+  }
+  return lastMsg;
+}
+
+export async function editTelegramMessage(chatId, messageId, text, options = {}) {
+  const basePayload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text.slice(0, MAX_MSG_LEN),
+    disable_web_page_preview: true,
+    ...(options.replyMarkup !== undefined ? { reply_markup: options.replyMarkup } : {}),
+  };
+  let data = await tgPost('editMessageText', { ...basePayload, parse_mode: 'Markdown' });
+  if (!data.ok) {
+    data = await tgPost('editMessageText', basePayload);
+  }
+  return data;
+}
+
+export async function sendAdminAlert(text, options = {}) {
   const adminId = process.env.BOT_ADMIN_USER_ID?.trim();
-  if (!adminId || !process.env.FINANCE_TELEGRAM_BOT_TOKEN?.trim()) return;
-  await sendTelegram(adminId, text);
+  if (!adminId || !process.env.FINANCE_TELEGRAM_BOT_TOKEN?.trim()) return null;
+  return sendTelegram(adminId, text, options);
 }
 
 async function sendTyping(chatId) {
   try {
-    await fetch(apiUrl('sendChatAction'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
-    });
+    await tgPost('sendChatAction', { chat_id: chatId, action: 'typing' });
   } catch {
     // non-fatal
   }
@@ -144,8 +179,7 @@ function formatBankHealth(health) {
 
 async function downloadTelegramFile(fileId) {
   const token = process.env.FINANCE_TELEGRAM_BOT_TOKEN.trim();
-  const infoRes = await fetch(apiUrl(`getFile?file_id=${encodeURIComponent(fileId)}`));
-  const info = await infoRes.json();
+  const info = await (await fetch(apiUrl(`getFile?file_id=${encodeURIComponent(fileId)}`))).json();
   if (!info.ok || !info.result?.file_path) {
     throw new Error('Could not fetch file path from Telegram.');
   }
@@ -162,20 +196,38 @@ async function downloadTelegramFile(fileId) {
   return { base64: buf.toString('base64'), mimeType };
 }
 
+function formatAppliedMessage(parsed, matchedTx, applyRes, { auto = false } = {}) {
+  const heading = auto
+    ? `*Auto-applied receipt!* (${parsed.store || 'Receipt'})`
+    : `*Split applied in Actual Budget!* (${parsed.store || 'Receipt'})`;
+  const lines = [
+    heading,
+    `${matchedTx.date} | ${matchedTx.accountName} | ${matchedTx.payeeName} (${matchedTx.amountGBP})`,
+    '',
+  ];
+  for (const s of applyRes.splits) {
+    lines.push(`• ${s.categoryName}: £${(Math.abs(s.amountCents) / 100).toFixed(2)}`);
+  }
+  return lines.join('\n');
+}
+
 function formatDraftPreview(parsed, splits, matchedTx) {
   const lines = [
     `*Receipt Scanned:* ${parsed.store || 'Unknown store'}`,
     `• Date: ${parsed.date || 'not readable'} | Total: £${Number(parsed.totalGBP).toFixed(2)}`,
     '',
-    '*Proposed Split:*',
+    splits.length === 1 ? '*Category:*' : '*Proposed Split:*',
   ];
   for (const s of splits) {
     lines.push(`• ${s.category}: £${(Math.abs(s.amountCents) / 100).toFixed(2)} (${s.summary})`);
   }
 
-  if (Array.isArray(parsed.nonGroceryItems) && parsed.nonGroceryItems.length > 0) {
-    lines.push('', '*Non-grocery items spotted:*');
-    for (const item of parsed.nonGroceryItems.slice(0, 10)) {
+  const bigNonGrocery = (parsed.nonGroceryItems || []).filter(
+    (item) => Number(item.amountGBP || 0) >= 5
+  );
+  if (bigNonGrocery.length > 0) {
+    lines.push('', '*Non-grocery items (£5+):*');
+    for (const item of bigNonGrocery.slice(0, 10)) {
       lines.push(`• ${item.item} (£${Number(item.amountGBP || 0).toFixed(2)}) → ${item.category}`);
     }
   }
@@ -185,18 +237,98 @@ function formatDraftPreview(parsed, splits, matchedTx) {
     lines.push(
       `*Matched in Actual Budget:*`,
       `${matchedTx.date} | ${matchedTx.accountName} | ${matchedTx.payeeName} | ${matchedTx.amountGBP}`,
-      matchedTx.alreadySplit ? '_(Note: this transaction is already split and will be replaced)_' : '',
-      '',
-      'Reply `/apply` to split this transaction in Actual Budget, or `/cancel`.'
+      matchedTx.alreadySplit ? '_(Note: already split — tapping Apply replaces it)_' : ''
     );
   } else {
     lines.push(
-      '*Not synced from your bank yet.*',
-      'Saved! Once your bank transaction syncs (every 6h), send `/receipts` to match & apply — or I will alert you automatically.'
+      '*Waiting for bank sync.*',
+      'Saved! As soon as it clears from your bank, I will auto-apply it (or send you a 1-tap button).'
     );
   }
 
   return lines.filter((l) => l !== '').join('\n');
+}
+
+/**
+ * Execute an Actual Budget split/categorization, save Undo entry, and refresh exports.
+ */
+export async function commitReceiptMatch({ parsed, splits, matchedTx, pendingId = null }) {
+  const res = await applyReceiptSplit(matchedTx, splits, parsed.store);
+  if (pendingId) removePendingReceipt(pendingId);
+
+  const undoRecord = saveUndoEntry({
+    ...res.undoPayload,
+    store: parsed.store || matchedTx.payeeName,
+    splits: res.splits.map((s) => ({
+      categoryName: s.categoryName,
+      amountCents: s.amountCents,
+    })),
+  });
+
+  const snap = await getFinanceSnapshot({ forceRefresh: true });
+  writeExports(snap);
+
+  return { res, undoRecord };
+}
+
+export function buildUndoMarkup(undoId) {
+  return {
+    inline_keyboard: [[{ text: '↩️ Undo', callback_data: `undo:${undoId}` }]],
+  };
+}
+
+export function buildConfirmMarkup(draftId) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '✅ Apply', callback_data: `apply:${draftId}` },
+        { text: '❌ Discard', callback_data: `discard:${draftId}` },
+      ],
+    ],
+  };
+}
+
+/**
+ * Re-usable handler for matched pending receipts (used by /receipts and scheduled sync).
+ * Returns { autoApplied, needsConfirm, stillWaiting }.
+ */
+export async function processPendingReceiptMatch(r, { forceConfirm = false } = {}) {
+  const matchedTx = await findMatchingTransaction({
+    store: r.store,
+    date: r.date,
+    totalGBP: r.totalGBP,
+  });
+  if (!matchedTx) return { status: 'waiting' };
+
+  const splits = normalizeSplitsToTarget(r.splits, matchedTx.amountCents);
+  const autoOk = !forceConfirm && isHighConfidenceMatch(r, matchedTx);
+
+  if (autoOk) {
+    const { res, undoRecord } = await commitReceiptMatch({
+      parsed: r,
+      splits,
+      matchedTx,
+      pendingId: r.id,
+    });
+    return {
+      status: 'auto_applied',
+      text: formatAppliedMessage(r, matchedTx, res, { auto: true }),
+      replyMarkup: buildUndoMarkup(undoRecord.id),
+    };
+  }
+
+  const draft = storeDraft({
+    pendingId: r.id,
+    parsed: r,
+    splits,
+    matchedTx,
+  });
+  return {
+    status: 'needs_confirm',
+    draft,
+    text: formatDraftPreview(r, splits, matchedTx),
+    replyMarkup: buildConfirmMarkup(draft.id),
+  };
 }
 
 async function handlePhotoMessage(msg) {
@@ -207,10 +339,22 @@ async function handlePhotoMessage(msg) {
   }
 
   await sendTyping(chatId);
-  await sendTelegram(chatId, 'Scanning receipt with Gemini...');
+  const statusMsg = await sendTelegram(chatId, 'Scanning receipt with Gemini...', {
+    replyToMessageId: msg.message_id,
+  });
+
+  const replyOrEdit = async (text, replyMarkup) => {
+    if (statusMsg?.message_id) {
+      await editTelegramMessage(chatId, statusMsg.message_id, text, { replyMarkup });
+    } else {
+      await sendTelegram(chatId, text, {
+        replyToMessageId: msg.message_id,
+        replyMarkup,
+      });
+    }
+  };
 
   try {
-    // Pick highest resolution photo (or image document)
     let fileId = null;
     if (Array.isArray(msg.photo) && msg.photo.length > 0) {
       fileId = msg.photo[msg.photo.length - 1].file_id;
@@ -242,27 +386,172 @@ async function handlePhotoMessage(msg) {
       : -Math.round(Number(parsed.totalGBP) * 100);
     const splits = normalizeSplitsToTarget(parsed.splits, targetCents);
 
+    if (matchedTx && isHighConfidenceMatch(parsed, matchedTx)) {
+      const { res, undoRecord } = await commitReceiptMatch({
+        parsed,
+        splits,
+        matchedTx,
+      });
+      await replyOrEdit(
+        formatAppliedMessage(parsed, matchedTx, res, { auto: true }),
+        buildUndoMarkup(undoRecord.id)
+      );
+      return;
+    }
+
     if (matchedTx) {
-      activeDrafts.set(String(chatId), {
+      const draft = storeDraft({
         pendingId: null,
         parsed,
         splits,
         matchedTx,
       });
-    } else {
-      addPendingReceipt({
-        store: parsed.store,
-        date: parsed.date,
-        totalGBP: parsed.totalGBP,
-        splits: parsed.splits,
-        nonGroceryItems: parsed.nonGroceryItems || [],
-      });
+      await replyOrEdit(
+        formatDraftPreview(parsed, splits, matchedTx),
+        buildConfirmMarkup(draft.id)
+      );
+      return;
     }
 
-    await sendTelegram(chatId, formatDraftPreview(parsed, splits, matchedTx));
+    const pendingEntry = addPendingReceipt({
+      store: parsed.store,
+      date: parsed.date,
+      totalGBP: parsed.totalGBP,
+      confidence: parsed.confidence || 'medium',
+      splits: parsed.splits,
+      nonGroceryItems: parsed.nonGroceryItems || [],
+    });
+
+    await replyOrEdit(formatDraftPreview(parsed, splits, null), {
+      inline_keyboard: [[{ text: '❌ Discard', callback_data: `drop_pending:${pendingEntry.id}` }]],
+    });
   } catch (err) {
     console.error('[receipt] Error:', err);
-    await sendTelegram(chatId, `Could not process receipt: ${err.message}`);
+    await replyOrEdit(`Could not process receipt: ${err.message}`);
+  }
+}
+
+async function handleCallbackQuery(query) {
+  const adminId = String(process.env.BOT_ADMIN_USER_ID || '').trim();
+  const fromId = String(query.from?.id || '');
+  const chatId = query.message?.chat?.id;
+  const messageId = query.message?.message_id;
+  const data = String(query.data || '');
+
+  if (!adminId || fromId !== adminId) {
+    await tgPost('answerCallbackQuery', {
+      callback_query_id: query.id,
+      text: 'Unauthorized.',
+      show_alert: true,
+    });
+    return;
+  }
+
+  const [action, id] = data.split(':', 2);
+
+  try {
+    if (action === 'apply') {
+      const draft = draftsById.get(id);
+      if (!draft) {
+        await tgPost('answerCallbackQuery', {
+          callback_query_id: query.id,
+          text: 'This preview expired. Run /receipts to check again.',
+        });
+        return;
+      }
+      await tgPost('answerCallbackQuery', { callback_query_id: query.id, text: 'Applying...' });
+      const { res, undoRecord } = await commitReceiptMatch(draft);
+      draftsById.delete(id);
+      await editTelegramMessage(
+        chatId,
+        messageId,
+        formatAppliedMessage(draft.parsed, draft.matchedTx, res, { auto: false }),
+        { replyMarkup: buildUndoMarkup(undoRecord.id) }
+      );
+      return;
+    }
+
+    if (action === 'discard') {
+      const draft = draftsById.get(id);
+      if (draft?.pendingId) removePendingReceipt(draft.pendingId);
+      draftsById.delete(id);
+      await tgPost('answerCallbackQuery', { callback_query_id: query.id, text: 'Discarded' });
+      await editTelegramMessage(chatId, messageId, 'Discarded receipt split.', {
+        replyMarkup: { inline_keyboard: [] },
+      });
+      return;
+    }
+
+    if (action === 'drop_pending') {
+      removePendingReceipt(id);
+      await tgPost('answerCallbackQuery', { callback_query_id: query.id, text: 'Removed' });
+      await editTelegramMessage(chatId, messageId, 'Removed saved pending receipt.', {
+        replyMarkup: { inline_keyboard: [] },
+      });
+      return;
+    }
+
+    if (action === 'undo') {
+      const entry = getUndoEntry(id);
+      if (!entry) {
+        await tgPost('answerCallbackQuery', {
+          callback_query_id: query.id,
+          text: 'Undo entry no longer available.',
+        });
+        return;
+      }
+      await tgPost('answerCallbackQuery', { callback_query_id: query.id, text: 'Reverting...' });
+      await undoReceiptSplit(entry);
+      removeUndoEntry(id);
+      const snap = await getFinanceSnapshot({ forceRefresh: true });
+      writeExports(snap);
+      await editTelegramMessage(
+        chatId,
+        messageId,
+        `↩️ *Undone!* Reverted *${entry.store || entry.originalTx.payeeName}* (${(
+          Math.abs(entry.originalTx.amountCents) / 100
+        ).toFixed(2)} GBP) back to its original state.`,
+        { replyMarkup: { inline_keyboard: [] } }
+      );
+      return;
+    }
+
+    if (action === 'apply_all') {
+      await tgPost('answerCallbackQuery', {
+        callback_query_id: query.id,
+        text: 'Applying all matched receipts...',
+      });
+      const draftIds = [...draftsById.keys()];
+      let applied = 0;
+      const lines = ['*Applied all matched receipts:*', ''];
+      for (const dId of draftIds) {
+        const draft = draftsById.get(dId);
+        if (!draft) continue;
+        const { res } = await commitReceiptMatch(draft);
+        draftsById.delete(dId);
+        applied++;
+        const splitStr = res.splits
+          .map((s) => `${s.categoryName} £${(Math.abs(s.amountCents) / 100).toFixed(2)}`)
+          .join(', ');
+        lines.push(`• ${draft.parsed.store}: ${splitStr}`);
+      }
+      await editTelegramMessage(
+        chatId,
+        messageId,
+        applied > 0 ? lines.join('\n') : 'No pending drafts left to apply.',
+        { replyMarkup: { inline_keyboard: [] } }
+      );
+      return;
+    }
+
+    await tgPost('answerCallbackQuery', { callback_query_id: query.id });
+  } catch (err) {
+    console.error('[telegram] Callback error:', err);
+    await tgPost('answerCallbackQuery', {
+      callback_query_id: query.id,
+      text: `Error: ${err.message.slice(0, 150)}`,
+      show_alert: true,
+    });
   }
 }
 
@@ -297,7 +586,7 @@ async function handleMessage(msg) {
         [
           '*Actual Budget + Gemini Finance Bot*',
           '',
-          '• *Send a receipt photo* (with optional note) to auto-split supermarket non-grocery items!',
+          '• *Send receipt photos* (one or an album) — high-confidence matches auto-apply with a 1-tap *Undo* button (non-grocery splits only for £5+ items).',
           '• *Ask any question* in plain English about your UK finances',
           '',
           '*Commands:*',
@@ -305,9 +594,8 @@ async function handleMessage(msg) {
           '• /budget — Live monthly budget vs spent per category',
           '• /weekly — AI weekly review & tips',
           '• /monthly — AI monthly review & subscription audit',
-          '• /receipts — Match saved receipts waiting for bank sync',
-          '• /apply — Confirm & apply the last receipt split',
-          '• /cancel — Cancel pending split (or `/cancel all`)',
+          '• /receipts — Match & auto-apply any saved pending receipts',
+          '• /cancel all — Clear all saved pending receipts',
           '• /banks — UK bank Open Banking consent status',
           '• /export — Refresh Google Drive Gemini export files',
           '• /refresh — Pull fresh data from Actual Budget',
@@ -318,41 +606,29 @@ async function handleMessage(msg) {
     }
 
     if (cmd === '/cancel') {
-      activeDrafts.delete(String(chatId));
+      draftsById.clear();
       if (arg === 'all') {
         clearPendingReceipts();
-        await sendTelegram(chatId, 'Cleared active draft and all saved pending receipts.');
+        await sendTelegram(chatId, 'Cleared all pending drafts and saved receipts.');
       } else {
-        await sendTelegram(chatId, 'Cancelled pending receipt split.');
+        await sendTelegram(chatId, 'Cleared active receipt previews (use `/cancel all` to also clear saved pending receipts).');
       }
       return;
     }
 
     if (cmd === '/apply') {
-      const draft = activeDrafts.get(String(chatId));
-      if (!draft || !draft.matchedTx) {
-        await sendTelegram(chatId, 'No matched receipt split waiting. Send a receipt photo or run /receipts first.');
+      const latest = [...draftsById.values()].pop();
+      if (!latest) {
+        await sendTelegram(chatId, 'No pending draft waiting — send a receipt photo or tap /receipts.');
         return;
       }
       await sendTyping(chatId);
-      const res = await applyReceiptSplit(draft.matchedTx, draft.splits, draft.parsed.store);
-      activeDrafts.delete(String(chatId));
-      if (draft.pendingId) removePendingReceipt(draft.pendingId);
-
-      // Refresh exports right away so Consumer Gemini sees the split
-      const snap = await getFinanceSnapshot({ forceRefresh: true });
-      writeExports(snap);
-
-      const summaryLines = res.splits.map(
-        (s) => `• ${s.categoryName}: £${(Math.abs(s.amountCents) / 100).toFixed(2)}`
-      );
+      const { res, undoRecord } = await commitReceiptMatch(latest);
+      draftsById.delete(latest.id);
       await sendTelegram(
         chatId,
-        [
-          `*Split applied in Actual Budget!*`,
-          `${draft.matchedTx.date} | ${draft.matchedTx.accountName} | ${draft.matchedTx.payeeName}`,
-          ...summaryLines,
-        ].join('\n')
+        formatAppliedMessage(latest.parsed, latest.matchedTx, res, { auto: false }),
+        { replyMarkup: buildUndoMarkup(undoRecord.id) }
       );
       return;
     }
@@ -364,32 +640,41 @@ async function handleMessage(msg) {
         return;
       }
       await sendTyping(chatId);
-      let matchedAny = false;
-      const lines = ['*Saved Pending Receipts:*', ''];
+      const waitingLines = [];
+      let confirmCount = 0;
+      let autoCount = 0;
+
       for (const r of pending) {
-        const matchedTx = await findMatchingTransaction({
-          store: r.store,
-          date: r.date,
-          totalGBP: r.totalGBP,
-        });
-        if (matchedTx && !matchedAny) {
-          matchedAny = true;
-          const splits = normalizeSplitsToTarget(r.splits, matchedTx.amountCents);
-          activeDrafts.set(String(chatId), {
-            pendingId: r.id,
-            parsed: r,
-            splits,
-            matchedTx,
-          });
-          await sendTelegram(chatId, formatDraftPreview(r, splits, matchedTx));
-          return;
+        const outcome = await processPendingReceiptMatch(r);
+        if (outcome.status === 'auto_applied') {
+          autoCount++;
+          await sendTelegram(chatId, outcome.text, { replyMarkup: outcome.replyMarkup });
+        } else if (outcome.status === 'needs_confirm') {
+          confirmCount++;
+          await sendTelegram(chatId, outcome.text, { replyMarkup: outcome.replyMarkup });
+        } else {
+          waitingLines.push(
+            `• ${r.store || 'Receipt'} (£${Number(r.totalGBP).toFixed(2)}, ${r.date || 'no date'})`
+          );
         }
-        lines.push(
-          `• ${r.store || 'Receipt'} (£${Number(r.totalGBP).toFixed(2)}, ${r.date || 'no date'}) — still waiting for bank sync`
-        );
       }
-      lines.push('', 'Send `/cancel all` to clear old saved receipts.');
-      await sendTelegram(chatId, lines.join('\n'));
+
+      if (confirmCount >= 2) {
+        await sendTelegram(chatId, `${confirmCount} receipts ready to apply:`, {
+          replyMarkup: {
+            inline_keyboard: [[{ text: `✅ Apply All (${confirmCount})`, callback_data: 'apply_all:now' }]],
+          },
+        });
+      }
+
+      if (waitingLines.length > 0) {
+        await sendTelegram(
+          chatId,
+          ['*Still waiting for bank sync:*', ...waitingLines, '', 'Tap `/cancel all` to clear old ones.'].join('\n')
+        );
+      } else if (autoCount === 0 && confirmCount === 0) {
+        await sendTelegram(chatId, 'No pending receipts matched yet.');
+      }
       return;
     }
 
@@ -492,7 +777,11 @@ export function startTelegramBot() {
     while (running) {
       try {
         const res = await fetch(
-          apiUrl(`getUpdates?timeout=30&offset=${offset}&allowed_updates=["message"]`),
+          apiUrl(
+            `getUpdates?timeout=30&offset=${offset}&allowed_updates=${encodeURIComponent(
+              JSON.stringify(['message', 'callback_query'])
+            )}`
+          ),
           { signal: AbortSignal.timeout(40000) }
         );
         if (!res.ok) {
@@ -505,7 +794,9 @@ export function startTelegramBot() {
         if (data.ok && Array.isArray(data.result)) {
           for (const update of data.result) {
             offset = update.update_id + 1;
-            if (update.message) {
+            if (update.callback_query) {
+              await handleCallbackQuery(update.callback_query);
+            } else if (update.message) {
               await handleMessage(update.message);
             }
           }

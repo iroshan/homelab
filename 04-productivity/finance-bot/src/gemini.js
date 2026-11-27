@@ -172,8 +172,9 @@ Instructions:
    - Pharmacy/medicine/personal grooming -> "Health & Personal Care"
    - Fuel/car products -> "Car, Fuel & Parking"
    - Hot takeaway / cafe food -> "Eating Out & Takeaways"
-3. Aggregate items by category into "splits", making sure the sum of split amounts equals totalGBP (distribute any multi-buy discount proportionally or subtract from the matching category).
-4. Return ONLY valid JSON (no markdown fences) matching this exact schema:
+3. Only split out a non-primary category if the items in that category total £5.00 or more (unless the user note explicitly asks otherwise). Small £1–£4.99 items (e.g. sponges, incense, greetings cards) should stay folded into the store's main category (e.g. "Groceries").
+4. Aggregate items by category into "splits", making sure the sum of split amounts equals totalGBP (distribute any multi-buy discount proportionally or subtract from the matching category).
+5. Return ONLY valid JSON (no markdown fences) matching this exact schema:
 {
   "store": "string",
   "date": "YYYY-MM-DD or null",
