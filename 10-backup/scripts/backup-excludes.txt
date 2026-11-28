@@ -5,7 +5,7 @@
 # rclone mounts (music, etc.)
 **/music/**
 **/mnt/rclone/**
-/home/ubuntu/homelab/music/**
+music/**
 
 # === Temporary & Cache Data ===
 **/tmp/**
@@ -41,9 +41,9 @@
 
 # === Backup Tool Data ===
 # Don't backup the backup tool's own data
-/home/ubuntu/homelab/10-backup/kopia-cache/**
-/home/ubuntu/homelab/10-backup/kopia-logs/**
-/home/ubuntu/homelab/10-backup/kopia-repository/**
+10-backup/kopia-cache/**
+10-backup/kopia-logs/**
+10-backup/kopia-repository/**
 
 # === Large Media Files (if needed) ===
 # Uncomment if you want to exclude certain media

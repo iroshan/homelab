@@ -39,19 +39,19 @@ fi
 echo "============================================================"
 echo " Homelab Live Server Migration"
 echo " Source: ${HOMELAB_DIR}"
-echo " Target: ${TARGET}:/home/ubuntu/homelab/"
+echo " Target: ${TARGET}:~/homelab/"
 echo " Mode:   $([ "$DRY_RUN" = "true" ] && echo "DRY RUN (no changes)" || echo "LIVE MIGRATION")"
 echo "============================================================"
 
-# 1. Verify SSH + sudo on target
+# 1. Verify SSH + sudo on target and resolve remote \$HOME/homelab
 echo ""
 echo "1) Checking SSH and sudo on ${TARGET}..."
-ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" "sudo -n true && mkdir -p /home/ubuntu/homelab" || {
+REMOTE_HOMELAB="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" 'sudo -n true && mkdir -p "$HOME/homelab" && printf "%s/homelab" "$HOME"')" || {
     echo "❌ Cannot reach ${TARGET} with SSH + passwordless sudo."
     echo "   Set up SSH key auth to ${TARGET} first, then re-run."
     exit 1
 }
-echo "✅ SSH + sudo verified."
+echo "✅ SSH + sudo verified (remote path: ${REMOTE_HOMELAB})."
 
 # 2. Take fresh DB backups while containers are still running
 echo ""
@@ -80,7 +80,7 @@ RSYNC_OPTS=(
 if [ "$DRY_RUN" = "true" ]; then
     echo ""
     echo "3) [DRY RUN] Previewing rsync transfer (containers left running)..."
-    sudo rsync "${RSYNC_OPTS[@]}" --dry-run "${HOMELAB_DIR}/" "${TARGET}:/home/ubuntu/homelab/"
+    sudo rsync "${RSYNC_OPTS[@]}" --dry-run "${HOMELAB_DIR}/" "${TARGET}:${REMOTE_HOMELAB}/"
     echo ""
     echo "✅ Dry run complete. Re-run without --dry-run when ready to cut over."
     exit 0
@@ -101,8 +101,8 @@ fi
 
 # 4. Sync everything cleanly with numeric UIDs/GIDs preserved
 echo ""
-echo "3) Syncing ~/homelab to ${TARGET} (preserving permissions & UIDs)..."
-sudo rsync "${RSYNC_OPTS[@]}" "${HOMELAB_DIR}/" "${TARGET}:/home/ubuntu/homelab/"
+echo "3) Syncing ~/homelab to ${TARGET}:${REMOTE_HOMELAB} (preserving permissions & UIDs)..."
+sudo rsync "${RSYNC_OPTS[@]}" "${HOMELAB_DIR}/" "${TARGET}:${REMOTE_HOMELAB}/"
 
 echo ""
 echo "============================================================"

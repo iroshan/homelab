@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="/home/ubuntu/homelab/04-productivity/finance-bot.env"
-DATA_DIR="/home/ubuntu/homelab/04-productivity/actual_mcp_data"
-NODE_BIN="/home/ubuntu/.nvm/versions/node/v22.23.5/bin"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/finance-bot.env"
+DATA_DIR="${SCRIPT_DIR}/actual_mcp_data"
+if [ -d "${HOME}/.nvm/versions/node/v22.23.5/bin" ]; then
+  NODE_BIN="${HOME}/.nvm/versions/node/v22.23.5/bin"
+else
+  NODE_BIN="$(dirname "$(command -v node)")"
+fi
 
 mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR"

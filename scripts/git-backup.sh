@@ -5,9 +5,9 @@
 set -euo pipefail
 
 # Configuration
-REPO_DIR="/home/ubuntu/homelab"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMMIT_MSG_PREFIX="[AUTO]"
-LOG_FILE="/home/ubuntu/homelab/git-backup.log"
+LOG_FILE="${REPO_DIR}/git-backup.log"
 
 # Logging function
 log() {

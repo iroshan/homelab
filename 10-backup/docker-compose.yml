@@ -41,7 +41,7 @@ services:
       - ./scripts:/app/scripts:ro
       
       # Source data to backup (read-only)
-      - /home/ubuntu/homelab:/backup-source:ro
+      - ..:/backup-source:ro
       
       # Repository storage (for local testing before GDrive)
       - ./kopia-repository:/repository

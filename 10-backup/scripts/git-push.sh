@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-PUSH_DIR="/home/ubuntu/homelab"
+PUSH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_TAG="[git-push]"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 

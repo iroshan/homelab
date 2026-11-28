@@ -178,6 +178,17 @@ echo "8) Updating TAILSCALE_IP for this server..."
 
 if [ "$RESTORE_ONLY" = "true" ]; then
     echo ""
+    PG_DUMP_FILE="${HOMELAB_DIR}/05-pkm/postgres_backups/latest.sql.gz"
+    if [ -s "$PG_DUMP_FILE" ] && gzip -t "$PG_DUMP_FILE" 2>/dev/null; then
+        echo "✅ Verified Affine pg_dump backup: ${PG_DUMP_FILE} ($(du -h "$PG_DUMP_FILE" | cut -f1))"
+    else
+        echo "⚠️  Affine pg_dump not found or invalid at ${PG_DUMP_FILE}"
+    fi
+    read -rp "Delete temporary restore folder ${RESTORE_TMP} (contains decrypted secrets)? [Y/n]: " CLEAN
+    if [[ ! "$CLEAN" =~ ^[Nn]$ ]]; then
+        sudo rm -rf "${RESTORE_TMP}"
+        echo "✅ Removed ${RESTORE_TMP}."
+    fi
     echo "✅ Restore-only complete. Review files in ${HOMELAB_DIR}, then run:"
     echo "   ./scripts/deploy-all.sh"
     exit 0
