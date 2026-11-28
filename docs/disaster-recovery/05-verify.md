@@ -20,7 +20,7 @@ Expected active containers (all `Up`, none `Restarting` or `Exited`):
 | `04-productivity` | `memos`, `telegram_memos_bot`, `actual-budget`, `truelayer2actual`, `actual-finance-bot`, `actual-ai` |
 | `05-pkm` | `affine`, `affine_postgres`, `affine_redis` |
 | `06-documentation` | `homelab-docs` |
-| `06-media` | `aiostreams`, `aiometadata`, `aiometadata_redis`, `nzbdavex` |
+| `06-media` | `aiostreams`, `aiometadata`, `aiometadata_redis` |
 | `10-backup` | `kopia`, `backup-scheduler` |
 | `11-security` | `vaultwarden`, `sqlite-helper` |
 

@@ -83,7 +83,7 @@ Key data directory paths inside `/home/ubuntu/homelab`:
 | Memos | `04-productivity/memos_data` | `1000:1000` |
 | Actual Budget + Finance | `04-productivity/actual_data`, `truelayer_data`, `finance_bot_data`, `finance_exports` | `1001:1001` |
 | Affine + Postgres + Redis | `05-pkm/affine_data`, `postgres_data`, `postgres_backups`, `redis_data` | `0:0` / `70:0` / `999:0` |
-| Media stack | `06-media/data/{aiostreams,aiometadata,nzbdavex,redis}` | `1001` / `1000` / `999` |
+| Media stack | `06-media/data/{aiostreams,aiometadata,redis}` | `1001` / `999` |
 | Vaultwarden | `11-security/vaultwarden_data` | `1000:1000` |
 
 ---

@@ -87,32 +87,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # NZBDAVEX - Usenet streaming engine & WebDAV bridge
-  nzbdavex:
-    image: ghcr.io/qooode/nzbdavex:edge
-    container_name: nzbdavex
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3080:3000"
-    environment:
-      - DISABLE_FRONTEND_AUTH=${DISABLE_FRONTEND_AUTH}
-    volumes:
-      - ./data/nzbdavex:/config
-    extends:
-      file: ../shared/dns-config.yml
-      service: dns-base
-    networks:
-      - media_net
-      - proxy_net
-    mem_limit: 1024m
-    mem_reservation: 256m
-    cpus: "1.0"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 networks:
   media_net:
     name: media_net

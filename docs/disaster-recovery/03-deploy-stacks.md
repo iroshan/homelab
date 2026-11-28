@@ -30,7 +30,7 @@ This creates all external Docker networks automatically and starts all 9 active 
 4. `04-productivity` — `memos`, `telegram_memos_bot`, `actual-budget`, `truelayer2actual`, `actual-finance-bot`, `actual-ai` *(auto-builds local images on first deploy)*
 5. `05-pkm` — `affine_postgres`, `affine_redis`, `affine_migration`, `affine`
 6. `06-documentation` — `homelab-docs`
-7. `06-media` — `aiostreams`, `aiometadata`, `aiometadata_redis`, `nzbdavex`
+7. `06-media` — `aiostreams`, `aiometadata`, `aiometadata_redis`
 8. `10-backup` — `kopia`, `backup-scheduler`
 9. `11-security` — `vaultwarden`, `sqlite-helper` *(auto-builds `sqlite-helper`)*
 
