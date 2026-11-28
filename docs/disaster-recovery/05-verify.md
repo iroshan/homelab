@@ -73,7 +73,7 @@ systemctl status homelab-git-backup.timer --no-pager
 
 ## Final Checklist
 
-- [ ] All ~21 containers are `Up` (and `healthy` where applicable)
+- [ ] All 22 containers are `Up` (and `healthy` where applicable)
 - [ ] Can log into Vaultwarden, Affine, Memos, and Actual Budget with data intact
 - [ ] Telegram bots (`telegram_memos_bot`, `actual-finance-bot`) respond
 - [ ] Cloudflare Tunnel shows **Healthy**

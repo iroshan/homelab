@@ -10,6 +10,7 @@
 set -euo pipefail
 
 BACKUP_SOURCE="/backup-source"
+BACKUP_DESC="${1:-Automated daily backup}"
 LOG_DIR="/app/logs"
 LOG_FILE="${LOG_DIR}/backup-$(date +%Y%m%d-%H%M%S).log"
 
@@ -51,7 +52,7 @@ echo "========================================" | tee -a "${LOG_FILE}"
 START_TIME=$(date +%s)
 
 if kopia snapshot create "${BACKUP_SOURCE}" \
-    --description "Automated daily backup" \
+    --description "${BACKUP_DESC}" \
     --progress-update-interval=30s 2>&1 | tee -a "${LOG_FILE}"; then
 
     END_TIME=$(date +%s)
